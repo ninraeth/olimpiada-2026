@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f2744" />
+    <meta name="description" content="Wyniki i składy — Olimpiada Bieździadów 2026" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Olimpiada 2026" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./css/styles.css" />
+    <title>Olimpiada Bieździadów 2026</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-bar">
+        <div class="top-bar-inner">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true">🏅</span>
+            <div class="brand-text">
+              <span class="brand-title">Olimpiada 2026</span>
+              <span class="brand-sub">Bieździady</span>
+            </div>
+          </div>
+          <div class="top-actions">
+            <span id="status-line" class="status-line" aria-live="polite"></span>
+            <button type="button" id="btn-refresh" class="btn btn-icon" title="Odśwież dane" aria-label="Odśwież dane">
+              <svg class="icon-refresh" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 0 1-8.9 3.1l-1.46 1.46A7 7 0 0 0 19 12c0-1.93-.78-3.68-2.05-4.95zM6 12c0-1.48.51-2.84 1.35-3.9l1.46 1.46A4.96 4.96 0 0 0 7 12a5 5 0 0 0 8.9 3.1l1.46 1.46A7 7 0 0 1 5 12c0-1.93.78-3.68 2.05-4.95L6 6V1l-5 5 5 5V6.35z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <nav id="main-nav" class="main-nav" role="tablist" aria-label="Dyscypliny"></nav>
+      </header>
+
+      <main id="content" class="content" role="main"></main>
+
+      <footer class="app-footer">
+        <p>
+          Dane z
+          <a
+            href="https://docs.google.com/spreadsheets/d/1UIwbJQgYsZ-JHrKSQiWmqekwbg-kcvNN"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Google Sheets</a
+          >
+          · PWA Olimpiada Bieździadów 2026
+        </p>
+      </footer>
+    </div>
+
+    <script type="module" src="./js/sw-register.js"></script>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
