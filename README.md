@@ -101,8 +101,11 @@ Kolumny `ID_*` (szare) — tylko do edycji w Sheets, **ukryte w aplikacji**.
 **Siatkówka — ranking automatyczny w aplikacji:**  
 dla każdego gracza ze składów drużyn liczone są mecze z wynikiem `X:Y` (sety).  
 % zwycięstw = wygrane / rozegrane; różnica setów = sety zdobyte − stracone (z perspektywy drużyny gracza).  
-Jeśli gracz jest w **obu** drużynach tego samego meczu, mecz liczy się **dwa razy** (po raz z każdej perspektywy).  
-Sortowanie: % zwycięstw malejąco, potem różnica setów malejąco.
+Gracz w **kilku drużynach** — sumowane są mecze wszystkich jego drużyn.  
+Jeśli gracz jest w **obu** drużynach tego samego meczu, mecz liczy się **dwa razy** (z każdej perspektywy).  
+Sortowanie: % zwycięstw malejąco, potem różnica setów malejąco.  
+
+**Wynik w arkuszu:** format `X:Y`. Najlepiej formatuj komórki jako **zwykły tekst** — inaczej Google Sheets często zamienia `2:1` na godzinę `2:01:00` (aplikacja to obsługuje, ale tekst jest bezpieczniejszy).
 
 ### Koszykówka
 

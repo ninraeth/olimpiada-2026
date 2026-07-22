@@ -279,7 +279,7 @@ function renderBasketball(disc, expandedNames = new Set()) {
   return `
     <section class="block">
       ${sectionTitle("Gracze / Ranking", sorted.length)}
-      <p class="hint">Wynik: 50% najlepsza próba + 50% średnia z pozostałych (1 próba = średnia z tej próby). Litera „S” w komórce próby = 50% najgorszy wynik tego typu rzutu (1P/2P/…) spośród wszystkich graczy i prób + 50% średnia tego typu. Sortowanie malejąco. Kliknij gracza, aby zobaczyć próby.</p>
+      <p class="hint">Wynik = (średnia najlepszej próby + średnia pozostałych prób) / 2, nie zwykła średnia arytmetyczna. 1 próba → średnia z 1P…UK2. „S” w komórce = 50% najgorszy wynik tego typu rzutu (wszyscy gracze/próby) + 50% średnia tego typu. Sortowanie malejąco. Kliknij gracza → próby.</p>
       <div class="table-wrap">
         <table class="data-table data-table--basketball">
           <thead>
@@ -453,7 +453,7 @@ export function renderDiscipline(tabId, data, uiState = {}) {
         notesLabel: "Drużyny",
         splitStats: true,
         hint:
-          "Ranking liczony automatycznie: % zwycięstw (malejąco), potem różnica setów (malejąco). Gracz w obu drużynach meczu — mecz liczy się z obu perspektyw.",
+          "Ranking liczony automatycznie z meczów z wynikiem (format X:Y; w arkuszu wpisuj jako tekst, żeby Sheets nie zamienił na godzinę). % zwycięstw ↓, potem różnica setów ↓. Gracz w wielu drużynach — sumowane są mecze wszystkich jego drużyn; w obu składach jednego meczu — liczy się dwukrotnie.",
         emptyMessage:
           "Brak graczy w drużynach — uzupełnij składy w arkuszu Siatkówka.",
       })
