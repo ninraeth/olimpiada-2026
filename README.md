@@ -7,9 +7,9 @@ Dane są **tylko do odczytu** i pochodzą z publicznego arkusza Google Sheets.
 
 Aplikacja pobiera arkusze z dokumentu:
 
-**[Olimpiada Bieździadów 2026 (Google Sheets)](https://docs.google.com/spreadsheets/d/1UIwbJQgYsZ-JHrKSQiWmqekwbg-kcvNN)**
+**[Olimpiada Bieździadów 2026 (Google Sheets)](https://docs.google.com/spreadsheets/d/18Frm47PTR0FCaZs4QoELydkQNmLQWmvU)**
 
-- ID arkusza jest ustawione w `js/config.js` (`SPREADSHEET_ID`).
+- ID arkusza: `18Frm47PTR0FCaZs4QoELydkQNmLQWmvU` (ustawione w `js/config.js` jako `SPREADSHEET_ID`).
 - Każda zakładka w aplikacji odpowiada arkuszu o tej samej nazwie:  
   `Info`, `Piłka Nożna`, `Siatkówka`, `Koszykówka`, `Badminton`, `Inne`.
 - Źródło: Google Visualization API (`gviz/tq` → CSV).  
@@ -94,18 +94,28 @@ Kolumny `ID_*` (szare) — tylko do edycji w Sheets, **ukryte w aplikacji**.
 
 ### Piłka Nożna / Siatkówka
 
-1. `# DRUŻYNY` → `ID_drużyny | Nazwa drużyny | Gracze (oddzieleni przecinkiem)`
+1. `# DRUŻYNY` → składy drużyn (patrz niżej)
 2. `# MECZE` → `ID_meczu | Faza | Drużyna 1 | Drużyna 2 | Wynik (X:Y)`
-3. `# RANKING` → opcjonalne w arkuszu  
+3. `# RANKING` → opcjonalne w arkuszu (w Siatkówce ranking liczy aplikacja)
 
-**Siatkówka — ranking automatyczny w aplikacji:**  
-dla każdego gracza ze składów drużyn liczone są mecze z wynikiem `X:Y` (sety).  
-% zwycięstw = wygrane / rozegrane; różnica setów = sety zdobyte − stracone (z perspektywy drużyny gracza).  
-Gracz w **kilku drużynach** — sumowane są mecze wszystkich jego drużyn.  
-Jeśli gracz jest w **obu** drużynach tego samego meczu, mecz liczy się **dwa razy** (z każdej perspektywy).  
-Sortowanie: % zwycięstw malejąco, potem różnica setów malejąco.  
+**Składy drużyn — dwa obsługiwane układy:**
 
-**Wynik w arkuszu:** format `X:Y`. Najlepiej formatuj komórki jako **zwykły tekst** — inaczej Google Sheets często zamienia `2:1` na godzinę `2:01:00` (aplikacja to obsługuje, ale tekst jest bezpieczniejszy).
+| | A (zalecany) | B (starszy) |
+|---|---|---|
+| Kolumny | `ID` \| `Nazwa drużyny` \| `Gracz 1` \| `Gracz 2` \| `Gracz 3` \| … | `ID` \| `Nazwa` \| `Gracze (po przecinku)` |
+| Komórki | **jeden gracz = jedna kolumna** | wszyscy w jednej komórce, rozdzieleni przecinkiem |
+
+Aplikacja zbiera **wszystkie kolumny po nazwie drużyny** (albo od kolumny „Gracze” w prawo).  
+Ten sam gracz w kilku drużynach → wpisz go w wierszu każdej z tych drużyn.
+
+**Siatkówka — ranking automatyczny:**  
+dla każdego gracza ze składów liczone są mecze z wynikiem `X:Y` (sety).  
+% zwycięstw = wygrane / rozegrane; różnica setów = sety zdobyte − stracone (perspektywa drużyny gracza).  
+Gracz w **kilku drużynach** — sumowane mecze wszystkich jego drużyn.  
+W **obu** składach jednego meczu — mecz liczy się **dwa razy**.  
+Sortowanie: % zwycięstw ↓, potem różnica setów ↓.  
+
+**Wynik meczu:** format `X:Y` jako **tekst** (żeby Sheets nie zamienił na godzinę).
 
 ### Koszykówka
 

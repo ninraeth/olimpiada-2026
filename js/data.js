@@ -163,10 +163,15 @@ function detectHeaderType(row) {
     return "ranking";
   }
 
+  // Teams: ID + nazwa, players may be one "Gracze" col OR many "Gracz 1/2/3…" cols
   if (
     joined.includes("id_druzyny") ||
-    (joined.includes("nazwa druzyny") && joined.includes("gracze")) ||
-    (joined.includes("nazwa") && joined.includes("gracze") && !joined.includes("faza"))
+    joined.includes("nazwa druzyny") ||
+    (joined.includes("nazwa") &&
+      (joined.includes("gracze") || /gracz\s*\d/.test(joined)) &&
+      !joined.includes("faza") &&
+      !joined.includes("wynik (") &&
+      !joined.includes("id_meczu"))
   ) {
     return "teams";
   }
@@ -193,50 +198,135 @@ function findCol(headers, predicates) {
 
 // ─── Row parsers ───────────────────────────────────────────────
 
+/**
+ * Parse a team roster row.
+ * Supports:
+ * - Legacy: ID | Nazwa | "Jan, Piotr, Adam" (comma-separated in one cell)
+ * - New:    ID | Nazwa | Jan | Piotr | Adam | … (one player per column)
+ * Mixed: cells may still contain comma lists; all columns after the team name
+ * (or from the first "Gracze"/"Gracz N" header) are collected.
+ *
+ * @param {string[]} headers
+ * @param {string[]} row
+ */
 function parseTeamRow(headers, row) {
+  const idIdx = findCol(headers, [
+    (h) => h.includes("id_druz"),
+    (h) => h === "id",
+  ]);
   const nameIdx = findCol(headers, [
-    (h) => h.includes("nazwa"),
-    (h) => h === "druzyna",
+    (h) => h.includes("nazwa druz") || h.includes("nazwa dru"),
+    (h) => h.includes("nazwa") && !h.includes("gracz"),
+    (h) => h === "druzyna" || h === "druzyna ",
   ]);
-  const playersIdx = findCol(headers, [
-    (h) => h.includes("gracze"),
-    (h) => h.includes("zawodnicy"),
-  ]);
-  const teamName =
-    nameIdx >= 0 ? cellStr(row[nameIdx]) : cellStr(row[1]);
+
+  let teamName = nameIdx >= 0 ? cellStr(row[nameIdx]) : "";
+  if (!teamName) {
+    // Fallback: first non-numeric cell that looks like a team label
+    for (let i = 0; i < row.length; i++) {
+      if (i === idIdx) continue;
+      const c = cellStr(row[i]);
+      if (!c || /^\d+(\.0+)?$/.test(c)) continue;
+      teamName = c;
+      break;
+    }
+  }
   if (!teamName) return null;
   if (
     /^id_/i.test(teamName) ||
     /^nazwa/i.test(teamName) ||
     /^\d+(\.0)?$/.test(teamName) ||
-    /^(faza|final|finał|eliminacje|gracz|miejsce|mecz)/i.test(teamName)
+    /^(faza|final|fina[lł]|eliminacje|gracz|gracze|miejsce|mecz|wynik)/i.test(
+      teamName
+    )
   ) {
     return null;
   }
 
-  const playersRaw =
-    playersIdx >= 0 ? cellStr(row[playersIdx]) : cellStr(row[2]);
-  // Players cell should look like a name list, not another team header
-  if (/^druzyna 1$/i.test(playersRaw) || /^wynik/i.test(playersRaw)) {
-    return null;
+  // Where player columns start
+  let startPlayers = findCol(headers, [
+    (h) => h.includes("gracze") || h.includes("zawodnicy"),
+    (h) => /^gracz(\s*\d+)?$/.test(h) || /^gracz\s+\d+/.test(h),
+  ]);
+  if (startPlayers < 0) {
+    startPlayers = nameIdx >= 0 ? nameIdx + 1 : idIdx >= 0 ? idIdx + 2 : 2;
   }
-  const players = splitPlayerList(playersRaw);
+
+  const width = Math.max(headers.length, row.length);
+  /** @type {string[]} */
+  const players = [];
+  const seen = new Set();
+
+  for (let i = startPlayers; i < width; i++) {
+    if (i === nameIdx || i === idIdx) continue;
+
+    const hNorm = normalizeHeader(headers[i] || "");
+    // Safety: stop if a later section header leaked into a wide row
+    if (
+      hNorm === "faza" ||
+      hNorm.includes("wynik (") ||
+      hNorm.includes("id_meczu") ||
+      hNorm === "miejsce"
+    ) {
+      break;
+    }
+
+    const cell = cellStr(row[i]);
+    if (!cell) continue;
+    // Skip pure header leftovers in data cells
+    if (isJunkPlayerToken(cell)) continue;
+
+    // One name per cell, OR still allow comma-separated legacy inside a cell
+    for (const p of splitPlayerList(cell)) {
+      if (isJunkPlayerToken(p)) continue;
+      // Don't treat the team name itself as a player if repeated
+      if (normName(p) === normName(teamName)) continue;
+      const key = normName(p);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      players.push(p);
+    }
+  }
 
   return { name: teamName, players };
 }
 
 /**
  * Split roster cell: commas, semicolons, newlines, " i ".
+ * Single name without separators → one-element list.
  * @param {string} raw
  * @returns {string[]}
  */
 function splitPlayerList(raw) {
   const s = cellStr(raw);
   if (!s) return [];
+  // If no common separators, whole cell is one player (new multi-column layout)
+  if (!/[,;|\n\r]/.test(s) && !/\s+i\s+/i.test(s)) {
+    return [s];
+  }
   return s
     .split(/[,;|\n\r]+|\s+i\s+/i)
     .map((p) => p.trim())
     .filter(Boolean);
+}
+
+/**
+ * @param {string} p
+ */
+function isJunkPlayerToken(p) {
+  const s = cellStr(p);
+  if (!s) return true;
+  if (/^id_/i.test(s)) return true;
+  if (/^\d+(\.0+)?$/.test(s)) return true;
+  if (
+    /^(gracze|zawodnicy|nazwa|nazwa druzyny|faza|wynik|miejsce|uwagi|druzyna)$/i.test(
+      normalizeHeader(s)
+    )
+  ) {
+    return true;
+  }
+  if (/^gracze\s*\(/i.test(s)) return true;
+  return false;
 }
 
 function parseMatchRow(headers, row) {
@@ -713,8 +803,69 @@ function parseGenericRow(headers, row) {
 // ─── Sheet parsers ─────────────────────────────────────────────
 
 /**
+ * True if row has label cells typical of a column header row
+ * (even when col0 is a mangled "Siatkówka # DRUŻYNY ID_drużyny").
+ * @param {string[]} row
+ */
+function rowLooksLikeColumnHeaders(row) {
+  const norms = row.map(normalizeHeader);
+  const joined = norms.join(" | ");
+  if (joined.includes("nazwa druz") || joined.includes("nazwa dru")) return true;
+  if (/gracz\s*\d/.test(joined) || joined.includes("gracze")) return true;
+  if (joined.includes("faza") && (joined.includes("druzyna") || joined.includes("wynik"))) {
+    return true;
+  }
+  if (joined.includes("imie") && joined.includes("wynik")) return true;
+  if (joined.includes("id_meczu") || joined.includes("id_druzyny")) return true;
+  // Multiple header-ish words across cells
+  const hits = norms.filter(
+    (h) =>
+      h.includes("nazwa") ||
+      h.includes("faza") ||
+      h.includes("wynik") ||
+      h.includes("gracz") ||
+      h.includes("miejsce")
+  ).length;
+  return hits >= 2;
+}
+
+/**
+ * Data rows usually start with a numeric ID (team/match id).
+ * @param {string[]} row
+ */
+function rowLooksLikeIdData(row) {
+  const c0 = cellStr(row[0]);
+  return /^\d+(\.0+)?$/.test(c0);
+}
+
+/**
+ * Fallback headers when the real header row was merged into a # SEKCJA line.
+ * @param {string} type
+ * @param {number} width
+ */
+function defaultHeadersForSection(type, width) {
+  const w = Math.max(width, 5);
+  if (type === "teams") {
+    const h = ["ID_drużyny", "Nazwa drużyny"];
+    for (let i = 1; i <= Math.max(6, w - 2); i++) h.push(`Gracz ${i}`);
+    return h;
+  }
+  if (type === "matches") {
+    return ["ID_meczu", "Faza", "Drużyna 1", "Drużyna 2", "Wynik (X:Y)"];
+  }
+  if (type === "ranking") {
+    return ["miejsce", "gracz", "zwycięstwa / mecze (%)", "różnica setów", "uwagi"];
+  }
+  if (type === "players") {
+    return ["ID_gracza", "Imię gracza", "WYNIK"];
+  }
+  return Array.from({ length: w }, (_, i) => `Kolumna ${i + 1}`);
+}
+
+/**
  * Walk rows and split into section blocks.
  * Supports new markers (# DRUŻYNY …) and legacy multi-table gviz exports.
+ * Handles Google merging title+#DRUŻYNY+column headers into one first cell.
  * @param {string[][]} rows
  */
 function splitSections(rows) {
@@ -756,7 +907,13 @@ function splitSections(rows) {
         const m = title.match(/#\s*SEKCJA\s*[|–-]?\s*(.*)$/i);
         title = (m && m[1].trim()) || "Sekcja";
       }
-      startSection(marker, title, null);
+
+      // Same row often already holds real column headers (gviz / merged cells)
+      if (rowLooksLikeColumnHeaders(row) || detectHeaderType(row)) {
+        startSection(marker, title, row);
+      } else {
+        startSection(marker, title, null);
+      }
       continue;
     }
 
@@ -778,6 +935,16 @@ function splitSections(rows) {
     }
 
     if (current && expectingHeader) {
+      // Do NOT treat the first data row (ID=1, Drużyna 1, Ali…) as headers
+      if (rowLooksLikeIdData(row)) {
+        current.headers = defaultHeadersForSection(
+          current.type,
+          Math.max(row.length, 8)
+        );
+        expectingHeader = false;
+        current.rows.push(row);
+        continue;
+      }
       current.headers = row.map(cellStr);
       const ht = detectHeaderType(row);
       if (ht && current.type !== "section") {

@@ -6,15 +6,7 @@
         ""
       ],
       [
-        "",
-        ""
-      ],
-      [
         "Informacje o rozgrywkach",
-        ""
-      ],
-      [
-        "",
         ""
       ],
       [
@@ -22,7 +14,7 @@
         ""
       ],
       [
-        "• Piłka Nożna (drużynowa)",
+        "• Piłka Nożna (drużynowa i indywidualna - strzały)",
         ""
       ],
       [
@@ -35,10 +27,6 @@
       ],
       [
         "• Badminton (indywidualny)",
-        ""
-      ],
-      [
-        "",
         ""
       ],
       [
@@ -74,19 +62,11 @@
         ""
       ],
       [
-        "",
-        ""
-      ],
-      [
         "data",
         ""
       ],
       [
         "miejsce",
-        ""
-      ],
-      [
-        "",
         ""
       ],
       [
@@ -96,28 +76,7 @@
     ],
     "Piłka Nożna": [
       [
-        "Piłka Nożna",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# DRUŻYNY",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_drużyny",
+        "Piłka Nożna # DRUŻYNY ID_drużyny",
         "Nazwa drużyny",
         "Gracze (oddzieleni przecinkiem)",
         "",
@@ -153,20 +112,6 @@
       ],
       [
         "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# MECZE",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_meczu",
         "Faza",
         "Drużyna 1",
         "Drużyna 2",
@@ -189,7 +134,7 @@
       [
         "3",
         "Mecz o 3. miejsce",
-        "",
+        "Drużyna XY",
         "",
         ""
       ],
@@ -202,151 +147,91 @@
       ],
       [
         "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Format wyniku: X:Y (X = gole Drużyny 1, Y = gole Drużyny 2)",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# RANKING",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "miejsce",
         "gracz",
         "zwycięstwa / mecze (%)",
         "różnica goli",
         "uwagi"
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Sortowanie: najpierw po zwycięstwa/mecze (%) (malejąco), przy remisie po różnicy goli (malejąco).",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Różnica goli = gole strzelone przez drużyny gracza minus gole stracone.",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Ranking wypełniany ręcznie. Aplikacja pokazuje tylko wiersze z wypełnionym graczem.",
-        "",
-        "",
-        "",
-        ""
       ]
     ],
     "Siatkówka": [
       [
-        "Siatkówka",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# DRUŻYNY",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_drużyny",
+        "Siatkówka # DRUŻYNY ID_drużyny",
         "Nazwa drużyny",
-        "Gracze (oddzieleni przecinkiem)",
-        "",
-        ""
+        "Gracz 1",
+        "Gracz 2",
+        "Gracz 3",
+        "Gracz 4",
+        "Gracz 5",
+        "Gracz 6"
       ],
       [
         "1",
         "Drużyna 1",
-        "Jan Kowalski, Piotr Nowak, Adam Wiśniewski",
+        "Ali",
+        "Oli",
+        "Dorota",
+        "",
         "",
         ""
       ],
       [
         "2",
         "Drużyna 2",
-        "Marek Zieliński, Tomasz Lewandowski, Krzysztof Wójcik",
+        "Piotrek",
+        "Łukasz",
+        "Krzychu",
+        "",
         "",
         ""
       ],
       [
         "3",
         "Drużyna 3",
-        "Paweł Kamiński, Michał Szymański, Andrzej Woźniak",
+        "Jasiu",
+        "Mela",
+        "Zuzia",
+        "",
         "",
         ""
       ],
       [
         "4",
         "Drużyna 4",
-        "Robert Kozłowski, Łukasz Jankowski, Marcin Mazur",
-        "",
-        ""
-      ],
-      [
-        "",
+        "Joasia",
+        "Ali",
         "",
         "",
         "",
         ""
       ],
       [
-        "# MECZE",
         "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_meczu",
         "Faza",
         "Drużyna 1",
         "Drużyna 2",
-        "Wynik (X:Y)"
+        "Wynik (X:Y)",
+        "",
+        "",
+        ""
+      ],
+      [
+        "5",
+        "Towarzyski",
+        "Drużyna 1",
+        "Drużyna 2",
+        "3:1",
+        "",
+        "",
+        ""
       ],
       [
         "1",
         "1/2 Finału",
         "Drużyna 1",
         "Drużyna 2",
+        "3:1",
+        "",
+        "",
         ""
       ],
       [
@@ -354,11 +239,17 @@
         "1/2 Finału",
         "Drużyna 3",
         "Drużyna 4",
+        "2:3",
+        "",
+        "",
         ""
       ],
       [
         "3",
         "Mecz o 3. miejsce",
+        "",
+        "",
+        "",
         "",
         "",
         ""
@@ -368,17 +259,6 @@
         "Finał",
         "",
         "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Format wyniku: X:Y (X = wygrane sety Drużyny 1, Y = wygrane sety Drużyny 2)",
         "",
         "",
         "",
@@ -386,49 +266,10 @@
       ],
       [
         "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# RANKING",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "miejsce",
         "gracz",
         "zwycięstwa / mecze (%)",
         "różnica setów",
-        "uwagi"
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Sortowanie: najpierw po zwycięstwa/mecze (%) (malejąco), przy remisie po różnicy setów (malejąco).",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Różnica setów = sety wygrane przez drużyny gracza minus sety przegrane.",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Ranking wypełniany ręcznie. Aplikacja pokazuje tylko wiersze z wypełnionym graczem.",
-        "",
+        "uwagi",
         "",
         "",
         ""
@@ -436,67 +277,7 @@
     ],
     "Koszykówka": [
       [
-        "Koszykówka (rzuty)",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# GRACZE",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_gracza",
+        "Koszykówka (rzuty) # GRACZE ID_gracza",
         "Imię gracza",
         "WYNIK",
         "Próba 1 - 1P",
@@ -519,31 +300,31 @@
         "1",
         "Gracz 1",
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
+        "2",
+        "2",
+        "2",
+        "2",
+        "2",
+        "4",
+        "4",
+        "4",
+        "4",
+        "4",
+        "5",
+        "5",
+        "5",
+        "5",
+        "5"
       ],
       [
         "2",
         "Gracz 2",
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
         "",
         "",
         "",
@@ -559,16 +340,16 @@
         "3",
         "Gracz 3",
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
+        "2",
+        "2",
+        "2",
+        "2",
+        "2",
+        "3",
+        "3",
+        "3",
+        "3",
+        "3",
         "",
         "",
         "",
@@ -579,30 +360,30 @@
         "4",
         "Gracz 4",
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
+        "2",
+        "2",
+        "2",
+        "2",
+        "2",
+        "4",
+        "4",
+        "4",
+        "4",
+        "4",
+        "5",
+        "5",
+        "5",
+        "5",
+        "5"
       ],
       [
         "5",
         "Gracz 5",
         "",
-        "",
-        "",
-        "",
-        "",
+        "1",
+        "1",
+        "1",
+        "1",
         "",
         "",
         "",
@@ -754,112 +535,11 @@
         "",
         "",
         ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* WYNIK = średnia ze wszystkich wypełnionych pól prób. Sortowanie w aplikacji po WYNIK malejąco.",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Kolumna ID_gracza (szara) — nie wyświetlać w aplikacji.",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* 1P / 2P / 3P / UK1 / UK2 = punkty z danej próby (rzuty).",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
       ]
     ],
     "Badminton": [
       [
-        "Badminton",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# GRACZE",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_gracza",
+        "Badminton # GRACZE ID_gracza",
         "Imię gracza",
         "",
         "",
@@ -909,20 +589,6 @@
       ],
       [
         "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# MECZE",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "ID_meczu",
         "Faza",
         "Gracz 1",
         "Gracz 2",
@@ -1007,75 +673,15 @@
       ],
       [
         "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# RANKING",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "miejsce",
         "gracz",
         "zwycięstwa / mecze (%)",
         "uwagi",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Format wyniku: X:Y (X = sety/punkty Gracza 1, Y = sety/punkty Gracza 2)",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "* Jeśli brak listy GRACZE — aplikacja zbierze imiona z meczów.",
-        "",
-        "",
-        "",
         ""
       ]
     ],
     "Inne": [
       [
-        "Inne konkurencje",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "# SEKCJA | Przykładowa konkurencja",
-        "",
-        "",
-        ""
-      ],
-      [
-        "miejsce",
+        "Inne konkurencje # SEKCJA | Przykładowa konkurencja miejsce",
         "uczestnik",
         "wynik",
         "uwagi"
@@ -1083,12 +689,6 @@
       [
         "1",
         "Uczestnik 1",
-        "",
-        ""
-      ],
-      [
-        "",
-        "",
         "",
         ""
       ],
@@ -1103,12 +703,6 @@
         "uczestnik",
         "wynik",
         "uwagi"
-      ],
-      [
-        "",
-        "",
-        "",
-        ""
       ],
       [
         "* Każda sekcja zaczyna się od: # SEKCJA | Nazwa konkurencji",
@@ -1129,5 +723,7 @@
         ""
       ]
     ]
-  }
+  },
+  "spreadsheetId": "18Frm47PTR0FCaZs4QoELydkQNmLQWmvU",
+  "exportedAt": "2026-07-22T19:20:53.730Z"
 }
