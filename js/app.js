@@ -18,6 +18,8 @@ const state = {
   loading: false,
   error: null,
   refreshTimer: null,
+  /** @type {Set<string>} */
+  expandedBasketball: new Set(),
 };
 
 const els = {
@@ -75,13 +77,43 @@ function render() {
   if (state.activeTab === "info") {
     els.content.innerHTML = renderInfo(state.data);
   } else {
-    els.content.innerHTML = renderDiscipline(state.activeTab, state.data);
+    els.content.innerHTML = renderDiscipline(state.activeTab, state.data, {
+      expandedBasketball: state.expandedBasketball,
+    });
   }
+
+  bindBasketballToggles();
 
   if (els.refreshBtn) {
     els.refreshBtn.disabled = state.loading;
     els.refreshBtn.classList.toggle("is-spinning", state.loading);
   }
+}
+
+function bindBasketballToggles() {
+  if (!els.content) return;
+  els.content.querySelectorAll("[data-toggle-player]").forEach((el) => {
+    const name = el.getAttribute("data-toggle-player");
+    if (!name) return;
+    const toggle = () => {
+      if (state.expandedBasketball.has(name)) {
+        state.expandedBasketball.delete(name);
+      } else {
+        state.expandedBasketball.add(name);
+      }
+      render();
+    };
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggle();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
 }
 
 /**
@@ -90,16 +122,19 @@ function render() {
 async function refresh(forceNetwork = false) {
   state.loading = true;
   state.error = null;
-  setStatus("Odświeżanie…", "loading");
+  setStatus("…", "loading");
   render();
 
   try {
     const data = await loadTournamentData();
     state.data = data;
     state.loading = false;
-    const t = new Date(data.fetchedAt).toLocaleTimeString("pl-PL");
-    const warn = data.errors?.length ? " (częściowe błędy)" : "";
-    setStatus(`Zaktualizowano o ${t}${warn}`, data.errors?.length ? "warn" : "ok");
+    const t = new Date(data.fetchedAt).toLocaleTimeString("pl-PL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const warn = data.errors?.length ? " !" : "";
+    setStatus(`akt. ${t}${warn}`, data.errors?.length ? "warn" : "ok");
     render();
   } catch (e) {
     console.error(e);
@@ -109,11 +144,11 @@ async function refresh(forceNetwork = false) {
     if (cached) {
       state.data = cached;
       state.error = null;
-      setStatus("Tryb offline — dane z cache", "warn");
+      setStatus("offline", "warn");
       render();
     } else {
       state.error = e.message || String(e);
-      setStatus("Błąd pobierania", "error");
+      setStatus("błąd", "error");
       render();
     }
   }
@@ -143,7 +178,7 @@ function init() {
   const cached = loadCachedData();
   if (cached) {
     state.data = cached;
-    setStatus("Cache — pobieranie aktualnych danych…", "loading");
+    setStatus("…", "loading");
   }
 
   updateNav();

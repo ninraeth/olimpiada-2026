@@ -318,51 +318,298 @@ function parseRankingRow(headers, row) {
   };
 }
 
+const ATTEMPT_SHOT_KEYS = ["1P", "2P", "3P", "UK1", "UK2"];
+
+/**
+ * Parse a numeric cell (supports "2,5", "2.5", "1/2", spaces).
+ * @param {unknown} raw
+ * @returns {number|null}
+ */
+function parseNumber(raw) {
+  if (raw == null) return null;
+  let s = String(raw).trim();
+  if (!s || s.startsWith("=")) return null;
+  // Unicode fractions / thin spaces
+  s = s.replace(/\u00a0/g, " ").replace(/\s+/g, "");
+  // Simple fraction a/b
+  const frac = s.match(/^(-?\d+)[/⁄](\d+)$/);
+  if (frac) {
+    const a = Number(frac[1]);
+    const b = Number(frac[2]);
+    if (b !== 0 && Number.isFinite(a) && Number.isFinite(b)) return a / b;
+  }
+  // Polish decimal comma → dot (but keep thousand separators carefully)
+  if (s.includes(",") && !s.includes(".")) {
+    s = s.replace(",", ".");
+  } else if (s.includes(",") && s.includes(".")) {
+    // e.g. 1.234,56 → 1234.56
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Format score always with 2 decimal places (PL comma).
+ * @param {number|null} n
+ */
+function formatScore2(n) {
+  if (n == null || !Number.isFinite(n)) return "";
+  return n.toLocaleString("pl-PL", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/**
+ * "S" / "s" = special marker in attempt cells (not a literal score).
+ * @param {unknown} raw
+ */
+export function isSpecialS(raw) {
+  return /^s$/i.test(cellStr(raw));
+}
+
+/**
+ * Collect real numeric values per shot type from all players/attempts.
+ * "S" markers are excluded (they are derived from this pool).
+ * @param {{ attemptRows?: { shots: Record<string, string> }[] }[]} players
+ * @returns {Record<string, number[]>}
+ */
+export function collectShotPools(players) {
+  /** @type {Record<string, number[]>} */
+  const pools = { "1P": [], "2P": [], "3P": [], UK1: [], UK2: [] };
+  for (const p of players || []) {
+    for (const ar of p.attemptRows || []) {
+      for (const key of ATTEMPT_SHOT_KEYS) {
+        const raw = ar.shots?.[key];
+        if (!cellStr(raw) || isSpecialS(raw)) continue;
+        const n = parseNumber(raw);
+        if (n != null) pools[key].push(n);
+      }
+    }
+  }
+  return pools;
+}
+
+/**
+ * Value for "S" in a given shot column:
+ * 50% × worst (min) of that shot type across all attempts of all players
+ * + 50% × average of that shot type across all attempts of all players
+ * (only real numbers; other "S" cells do not enter the pool)
+ *
+ * @param {string} shotKey
+ * @param {Record<string, number[]>} pools
+ * @returns {number|null}
+ */
+export function specialSValue(shotKey, pools) {
+  const nums = pools?.[shotKey] || [];
+  if (!nums.length) return null;
+  const worst = Math.min(...nums);
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  return 0.5 * worst + 0.5 * avg;
+}
+
+/**
+ * Resolve one shot cell to a number (handles "S").
+ * @param {unknown} raw
+ * @param {string} shotKey
+ * @param {Record<string, number[]>|null|undefined} pools
+ */
+function resolveShotValue(raw, shotKey, pools) {
+  if (!cellStr(raw)) return null;
+  if (isSpecialS(raw)) {
+    return pools ? specialSValue(shotKey, pools) : null;
+  }
+  return parseNumber(raw);
+}
+
+/**
+ * Mean of filled shot values in one attempt (1P, 2P, 3P, UK1, UK2).
+ * @param {Record<string, string>} shots
+ * @param {Record<string, number[]>|null|undefined} pools
+ * @returns {number|null}
+ */
+function averageAttemptShots(shots, pools) {
+  const nums = [];
+  for (const key of ATTEMPT_SHOT_KEYS) {
+    const n = resolveShotValue(shots?.[key], key, pools);
+    if (n != null) nums.push(n);
+  }
+  if (!nums.length) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+/**
+ * Weighted basketball score from any number of attempts:
+ * - 1 attempt  → mean of that attempt's shots
+ * - 2+ attempts → 50% best attempt mean + 50% mean of the other attempts' means
+ *
+ * @param {{ index: number, shots: Record<string, string> }[]} attemptRows
+ * @param {Record<string, number[]>|null|undefined} pools  needed to resolve "S"
+ * @returns {number|null}
+ */
+export function computeBasketballScore(attemptRows, pools = null) {
+  if (!attemptRows?.length) return null;
+
+  /** @type {number[]} */
+  const attemptMeans = [];
+  for (const ar of attemptRows) {
+    const avg = averageAttemptShots(ar.shots, pools);
+    if (avg != null) attemptMeans.push(avg);
+  }
+  if (!attemptMeans.length) return null;
+  if (attemptMeans.length === 1) return attemptMeans[0];
+
+  let best = attemptMeans[0];
+  let bestI = 0;
+  for (let i = 1; i < attemptMeans.length; i++) {
+    if (attemptMeans[i] > best) {
+      best = attemptMeans[i];
+      bestI = i;
+    }
+  }
+
+  const others = attemptMeans.filter((_, i) => i !== bestI);
+  const othersMean = others.reduce((a, b) => a + b, 0) / others.length;
+  return 0.5 * best + 0.5 * othersMean;
+}
+
+/**
+ * After all players are parsed: resolve "S" and recompute scores/ranking fields.
+ * @param {any[]} players
+ */
+export function finalizeBasketballPlayers(players) {
+  const pools = collectShotPools(players);
+  /** @type {Record<string, number|null>} */
+  const sResolved = {};
+  for (const key of ATTEMPT_SHOT_KEYS) {
+    sResolved[key] = specialSValue(key, pools);
+  }
+
+  for (const p of players) {
+    let scoreNum = computeBasketballScore(p.attemptRows, pools);
+    if (scoreNum == null && p._scoreRaw) {
+      scoreNum = parseNumber(p._scoreRaw);
+    }
+    p.scoreNum = scoreNum;
+    p.score = scoreNum != null ? formatScore2(scoreNum) : "";
+    p.sResolved = sResolved;
+    // Keep display as "S" in attempts; store numeric map for tooltips if needed
+    p.resolvedAttemptRows = (p.attemptRows || []).map((ar) => {
+      /** @type {Record<string, string>} */
+      const shots = {};
+      for (const key of ATTEMPT_SHOT_KEYS) {
+        const raw = ar.shots?.[key] || "";
+        if (isSpecialS(raw)) {
+          const n = specialSValue(key, pools);
+          shots[key] = n != null ? formatScore2(n) : raw;
+        } else {
+          shots[key] = raw;
+        }
+      }
+      return { index: ar.index, shots, raw: ar.shots };
+    });
+  }
+  return pools;
+}
+
+/**
+ * Detect attempt index + shot key from header like "Próba 1 - 1P".
+ * Works for Próba N beyond 3 as long as headers follow the same pattern.
+ * @param {string} header
+ * @returns {{ attempt: number, shot: string }|null}
+ */
+function parseAttemptHeader(header) {
+  const nh = normalizeHeader(header);
+  // "proba 1 - 1p" / "proba 12 - uk1" / mangled variants
+  let m = nh.match(/proba\s*(\d+)\s*[-–:]?\s*(1p|2p|3p|uk\s*1|uk\s*2)/i);
+  if (!m) {
+    m = nh.match(/(\d+)\s*[-–:]\s*(1p|2p|3p|uk\s*1|uk\s*2)/i);
+  }
+  if (!m) return null;
+  const attempt = Number(m[1]);
+  const shot = m[2].toUpperCase().replace(/\s+/g, "");
+  if (!ATTEMPT_SHOT_KEYS.includes(shot)) return null;
+  if (!Number.isFinite(attempt) || attempt < 1) return null;
+  return { attempt, shot };
+}
+
+function emptyShotMap() {
+  return { "1P": "", "2P": "", "3P": "", UK1: "", UK2: "" };
+}
+
 function parseBasketballPlayerRow(headers, row) {
   const nameIdx = findCol(headers, [
     (h) => h.includes("imie"),
     (h) => h.includes("gracz") && !h.includes("id"),
     (h) => h === "nazwa",
   ]);
+  // Sheet WYNIK is optional display source; app recalculates from attempts
   const scoreIdx = findCol(headers, [
     (h) => h === "wynik",
-    (h) => h.includes("wynik"),
+    (h) => h.startsWith("wynik"),
   ]);
 
   const name = nameIdx >= 0 ? cellStr(row[nameIdx]) : cellStr(row[1]);
   if (!name || /^imie/i.test(name) || /^id_/i.test(name)) return null;
 
   let scoreRaw = scoreIdx >= 0 ? cellStr(row[scoreIdx]) : cellStr(row[2]);
-  // Skip formula text if unevaluated
   if (scoreRaw.startsWith("=")) scoreRaw = "";
 
-  /** @type {Record<string, string>} */
-  const attempts = {};
-  const attemptValues = [];
+  /** @type {Map<number, Record<string, string>>} */
+  const byAttempt = new Map();
+  /** @type {Record<string, string>} legacy flat map */
+  const attemptsFlat = {};
+
   headers.forEach((h, i) => {
-    const nh = normalizeHeader(h);
-    if (nh.includes("proba") || nh.includes("próba") || /[123]p|uk[12]/.test(nh)) {
-      const v = cellStr(row[i]);
-      if (v && !v.startsWith("=")) {
-        attempts[cellStr(h)] = v;
-        const n = Number(v.replace(",", "."));
-        if (!Number.isNaN(n)) attemptValues.push(n);
+    const meta = parseAttemptHeader(h);
+    const v = cellStr(row[i]);
+    if (!v || v.startsWith("=")) {
+      if (meta && !byAttempt.has(meta.attempt)) {
+        byAttempt.set(meta.attempt, emptyShotMap());
       }
+      return;
+    }
+
+    if (meta) {
+      if (!byAttempt.has(meta.attempt)) {
+        byAttempt.set(meta.attempt, emptyShotMap());
+      }
+      byAttempt.get(meta.attempt)[meta.shot] = v;
+      attemptsFlat[cellStr(h)] = v;
+      return;
+    }
+
+    // Fallback: any proba-like header (flat only)
+    const nh = normalizeHeader(h);
+    if (nh.includes("proba") || /(?:^|\s)(1p|2p|3p|uk[12])(?:\s|$)/i.test(nh)) {
+      attemptsFlat[cellStr(h)] = v;
     }
   });
 
-  let score = scoreRaw;
-  if (!score && attemptValues.length) {
-    const avg =
-      attemptValues.reduce((a, b) => a + b, 0) / attemptValues.length;
-    score = String(Math.round(avg * 100) / 100);
+  // Keep only attempts with at least one filled shot (supports N attempts)
+  /** @type {{ index: number, shots: Record<string, string> }[]} */
+  const attemptRows = [];
+  const indices = [...byAttempt.keys()].sort((a, b) => a - b);
+  for (const idx of indices) {
+    const shots = byAttempt.get(idx);
+    const hasAny = ATTEMPT_SHOT_KEYS.some((k) => cellStr(shots[k]));
+    if (hasAny) {
+      attemptRows.push({ index: idx, shots });
+    }
   }
+
+  // Score finalized later (needs global pools for "S"); provisional without S-resolution
+  const scoreNum = computeBasketballScore(attemptRows, null);
+  const score = scoreNum != null ? formatScore2(scoreNum) : "";
 
   return {
     name,
     score,
-    scoreNum: score ? Number(String(score).replace(",", ".")) || 0 : null,
-    attempts,
+    scoreNum,
+    _scoreRaw: scoreRaw,
+    attempts: attemptsFlat,
+    attemptRows,
   };
 }
 
@@ -660,24 +907,195 @@ export function parseDisciplineSheet(sheetName, rows) {
     }));
   }
 
-  // Basketball ranking = players sorted by score
+  // Basketball: resolve "S" markers, recompute scores, then ranking
   if (/koszyk/i.test(sheetName) && result.players.length) {
-    const sorted = [...result.players]
-      .filter((p) => p.scoreNum != null || p.score)
-      .sort((a, b) => (b.scoreNum ?? -1) - (a.scoreNum ?? -1));
-    if (sorted.length && result.ranking.length === 0) {
-      result.ranking = sorted.map((p, i) => ({
-        place: String(i + 1),
-        player: p.name,
-        winRate: p.score || "—",
-        diff: "",
-        notes: "",
-        extra: {},
-      }));
-    }
+    finalizeBasketballPlayers(result.players);
+    const sorted = [...result.players].sort(
+      (a, b) => (b.scoreNum ?? -Infinity) - (a.scoreNum ?? -Infinity)
+    );
+    result.ranking = sorted.map((p, i) => ({
+      place: String(i + 1),
+      player: p.name,
+      winRate: p.score || "—",
+      diff: "",
+      notes: "",
+      extra: {},
+    }));
+  }
+
+  // Volleyball: auto ranking from teams + matches (overrides sheet ranking)
+  // Sort: win% desc, then set difference desc (per sheet rules)
+  if (/siatk/i.test(sheetName)) {
+    result.ranking = computeVolleyballRanking(result.teams, result.matches);
+    result.rankingAuto = true;
   }
 
   return result;
+}
+
+// ─── Volleyball ranking ────────────────────────────────────────
+
+/**
+ * Normalize team/player label for comparison.
+ * @param {string} s
+ */
+function normName(s) {
+  return cellStr(s)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Parse match score "X:Y" / "X-Y".
+ * @param {string} score
+ * @returns {{ a: number, b: number }|null}
+ */
+export function parseMatchScore(score) {
+  const s = cellStr(score);
+  if (!s) return null;
+  const m = s.match(/^(\d+)\s*[:\-–]\s*(\d+)$/);
+  if (!m) return null;
+  return { a: Number(m[1]), b: Number(m[2]) };
+}
+
+function isPlaceholderSide(name) {
+  const n = cellStr(name);
+  if (!n) return true;
+  if (/^tbd$/i.test(n)) return true;
+  if (/^—$|^-$|^–$/.test(n)) return true;
+  return false;
+}
+
+/**
+ * Build individual ranking for volleyball.
+ * - Player may belong to multiple teams
+ * - If both teams in a match include the player, the match counts twice
+ *   (once from each team's perspective)
+ * - Only matches with a parseable score count as played
+ * - Sort: win rate desc, then set difference desc, then name
+ *
+ * @param {{ name: string, players: string[] }[]} teams
+ * @param {{ phase: string, side1: string, side2: string, score: string }[]} matches
+ */
+export function computeVolleyballRanking(teams, matches) {
+  /** @type {Map<string, { display: string, teams: Set<string>, teamNorms: Set<string> }>} */
+  const players = new Map();
+
+  for (const team of teams || []) {
+    const teamName = cellStr(team.name);
+    if (!teamName) continue;
+    const tNorm = normName(teamName);
+    for (const raw of team.players || []) {
+      const display = cellStr(raw);
+      if (!display) continue;
+      const key = normName(display);
+      if (!players.has(key)) {
+        players.set(key, {
+          display,
+          teams: new Set(),
+          teamNorms: new Set(),
+        });
+      }
+      const p = players.get(key);
+      p.teams.add(teamName);
+      p.teamNorms.add(tNorm);
+    }
+  }
+
+  /** @type {Map<string, { wins: number, played: number, setDiff: number }>} */
+  const stats = new Map();
+  for (const key of players.keys()) {
+    stats.set(key, { wins: 0, played: 0, setDiff: 0 });
+  }
+
+  for (const match of matches || []) {
+    const score = parseMatchScore(match.score);
+    if (!score) continue;
+    if (isPlaceholderSide(match.side1) || isPlaceholderSide(match.side2)) {
+      continue;
+    }
+
+    const side1Norm = normName(match.side1);
+    const side2Norm = normName(match.side2);
+    if (!side1Norm || !side2Norm) continue;
+
+    // For each player, count from every team perspective they share with a side
+    for (const [key, p] of players) {
+      const st = stats.get(key);
+      const onSide1 = p.teamNorms.has(side1Norm);
+      const onSide2 = p.teamNorms.has(side2Norm);
+
+      if (onSide1) {
+        st.played += 1;
+        st.setDiff += score.a - score.b;
+        if (score.a > score.b) st.wins += 1;
+      }
+      if (onSide2) {
+        st.played += 1;
+        st.setDiff += score.b - score.a;
+        if (score.b > score.a) st.wins += 1;
+      }
+    }
+  }
+
+  /** @type {any[]} */
+  const rows = [];
+  for (const [key, p] of players) {
+    const st = stats.get(key);
+    const winPct = st.played > 0 ? st.wins / st.played : null;
+    const pctStr =
+      winPct == null
+        ? "—"
+        : `${st.wins}/${st.played} (${(winPct * 100).toLocaleString("pl-PL", {
+            maximumFractionDigits: 1,
+            minimumFractionDigits: 0,
+          })}%)`;
+    const diffStr =
+      st.played === 0
+        ? "—"
+        : st.setDiff > 0
+          ? `+${st.setDiff}`
+          : String(st.setDiff);
+    const teamList = [...p.teams].join(", ");
+
+    rows.push({
+      place: "",
+      player: p.display,
+      winRate: pctStr,
+      diff: diffStr,
+      notes: teamList,
+      extra: {},
+      // sort helpers (not displayed as-is)
+      _winPct: winPct == null ? -1 : winPct,
+      _setDiff: st.setDiff,
+      _played: st.played,
+      _name: normName(p.display),
+    });
+  }
+
+  rows.sort((a, b) => {
+    // Players with played matches first
+    if ((b._played > 0) !== (a._played > 0)) {
+      return b._played > 0 ? 1 : -1;
+    }
+    // 1) win% desc
+    if (b._winPct !== a._winPct) return b._winPct - a._winPct;
+    // 2) set difference desc
+    if (b._setDiff !== a._setDiff) return b._setDiff - a._setDiff;
+    // 3) name
+    return a._name.localeCompare(b._name, "pl");
+  });
+
+  return rows.map((r, i) => ({
+    place: String(i + 1),
+    player: r.player,
+    winRate: r.winRate,
+    diff: r.diff,
+    notes: r.notes,
+    extra: r.extra,
+  }));
 }
 
 // ─── Fetch layer ───────────────────────────────────────────────

@@ -15,7 +15,7 @@ Aplikacja pobiera arkusze z dokumentu:
 - Źródło: Google Visualization API (`gviz/tq` → CSV).  
   Gdy CORS zablokuje gviz, używany jest zapasowy endpoint [OpenSheet](https://opensheet.elk.sh/).
 - Po udanym pobraniu dane trafiają do `localStorage` (offline / błąd sieci).
-- Auto-odświeżanie co 60 sekund (oraz przycisk ↻ i powrót do karty przeglądarki).
+- Auto-odświeżanie co 5 minut (oraz przycisk ↻ i powrót do karty przeglądarki).
 
 Arkusz musi być udostępniony jako **„Każdy z linkiem → Przeglądający”**.
 
@@ -96,12 +96,31 @@ Kolumny `ID_*` (szare) — tylko do edycji w Sheets, **ukryte w aplikacji**.
 
 1. `# DRUŻYNY` → `ID_drużyny | Nazwa drużyny | Gracze (oddzieleni przecinkiem)`
 2. `# MECZE` → `ID_meczu | Faza | Drużyna 1 | Drużyna 2 | Wynik (X:Y)`
-3. `# RANKING` → `miejsce | gracz | zwycięstwa / mecze (%) | różnica … | uwagi`
+3. `# RANKING` → opcjonalne w arkuszu  
+
+**Siatkówka — ranking automatyczny w aplikacji:**  
+dla każdego gracza ze składów drużyn liczone są mecze z wynikiem `X:Y` (sety).  
+% zwycięstw = wygrane / rozegrane; różnica setów = sety zdobyte − stracone (z perspektywy drużyny gracza).  
+Jeśli gracz jest w **obu** drużynach tego samego meczu, mecz liczy się **dwa razy** (po raz z każdej perspektywy).  
+Sortowanie: % zwycięstw malejąco, potem różnica setów malejąco.
 
 ### Koszykówka
 
-`# GRACZE` → `ID_gracza | Imię gracza | WYNIK | Próba 1… | Próba 2… | Próba 3…`  
-Aplikacja sortuje po kolumnie **WYNIK**.
+`# GRACZE` → `ID_gracza | Imię gracza | WYNIK | Próba 1… | Próba 2… | Próba N…`  
+
+Kolumny prób: `Próba N - 1P`, `Próba N - 2P`, `Próba N - 3P`, `Próba N - UK1`, `Próba N - UK2`  
+(można dodać więcej niż 3 próby — wystarczy dopisać kolejne kolumny w tym samym formacie).
+
+**Wynik w aplikacji** (nie zwykła średnia ze wszystkich komórek):
+1. Dla każdej wypełnionej próby: średnia z wypełnionych pól `1P…UK2`
+2. Jedna próba → ta średnia jest wynikiem
+3. Dwie lub więcej → **50%** średnia najlepszej próby + **50%** średnia ze średnich pozostałych prób
+
+**Litera `S` / `s` w komórce próby** (np. `Próba 1 - 3P`):
+w obliczeniach zastępowana liczbą: **50%** × najgorszy (minimalny) wynik tego typu rzutu (`3P` itd.) ze **wszystkich prób wszystkich graczy** + **50%** × średnia wszystkich wyników tego typu.  
+Inne komórki `S` nie wchodzą do puli (liczą się tylko realne liczby).
+
+Kolumna **WYNIK** w arkuszu jest opcjonalna (aplikacja liczy wynik z prób).
 
 ### Badminton
 

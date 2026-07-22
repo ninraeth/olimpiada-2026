@@ -200,11 +200,11 @@ for i in range(1, 13):
         ws.cell(r, c).border = thin
     for c in range(1, 4):
         ws.cell(r, c).border = thin
-ws["A18"] = "* WYNIK = średnia ze wszystkich wypełnionych pól prób. Sortowanie w aplikacji po WYNIK malejąco."
+ws["A18"] = "* WYNIK w aplikacji: 50% najlepsza próba + 50% średnia z pozostałych (1 próba = średnia z tej próby). Formuła w kolumnie WYNIK w arkuszu jest orientacyjna."
 ws["A18"].font = note_font
-ws["A19"] = "* Kolumna ID_gracza (szara) — nie wyświetlać w aplikacji."
+ws["A19"] = "* Można dodać Próba 4, 5… — kolumny w formacie: Próba N - 1P / 2P / 3P / UK1 / UK2."
 ws["A19"].font = note_font
-ws["A20"] = "* 1P / 2P / 3P / UK1 / UK2 = punkty z danej próby (rzuty)."
+ws["A20"] = "* Kolumna ID_gracza (szara) — nie wyświetlać w aplikacji. 1P/2P/3P/UK1/UK2 = punkty z danej próby."
 ws["A20"].font = note_font
 set_col_widths(ws, [12, 16, 10] + [12] * 15)
 

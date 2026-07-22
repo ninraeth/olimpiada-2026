@@ -12,8 +12,8 @@ export const TABS = [
   { id: "inne", label: "Inne", sheet: "Inne", icon: "🏆" },
 ];
 
-/** Auto-refresh interval in milliseconds */
-export const REFRESH_INTERVAL_MS = 60_000;
+/** Auto-refresh interval in milliseconds (5 minutes) */
+export const REFRESH_INTERVAL_MS = 5 * 60_000;
 
 /** localStorage key for last successful data snapshot */
 export const CACHE_KEY = "olimpiada2026_data_v1";

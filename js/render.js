@@ -112,18 +112,46 @@ function renderMatches(matches) {
   return html;
 }
 
-function renderRanking(ranking, scoreLabel = "Wynik") {
+/**
+ * @param {any[]} ranking
+ * @param {string | { scoreLabel?: string, diffLabel?: string, notesLabel?: string, hint?: string, emptyMessage?: string, splitStats?: boolean }} [opts]
+ */
+function renderRanking(ranking, opts = "Wynik") {
+  const options =
+    typeof opts === "string"
+      ? { scoreLabel: opts }
+      : opts || {};
+  const scoreLabel = options.scoreLabel || "Wynik";
+  const diffLabel = options.diffLabel || "Różnica";
+  const notesLabel = options.notesLabel || "Uwagi";
+  const hint = options.hint || "";
+  const emptyMessage =
+    options.emptyMessage || "Ranking jest pusty — uzupełnij w arkuszu.";
+  const splitStats =
+    options.splitStats ??
+    ranking?.some((r) => r.diff != null && String(r.diff).length > 0);
+
   if (!ranking?.length) {
     return `
       <section class="block">
         ${sectionTitle("Ranking")}
-        ${emptyBlock("Ranking jest pusty — uzupełnij w arkuszu.")}
+        ${emptyBlock(emptyMessage)}
       </section>`;
   }
 
   const rows = ranking
     .map((r, i) => {
       const place = r.place || String(i + 1);
+      if (splitStats) {
+        return `
+        <tr>
+          <td class="col-place"><span class="place-pill">${esc(place)}</span></td>
+          <td class="col-player">${esc(r.player)}</td>
+          <td class="col-stat">${esc(r.winRate || "—")}</td>
+          <td class="col-stat">${esc(r.diff || "—")}</td>
+          <td class="col-notes muted">${esc(r.notes || "")}</td>
+        </tr>`;
+      }
       const secondary = [r.winRate, r.diff].filter(Boolean).join(" · ");
       return `
         <tr>
@@ -135,60 +163,115 @@ function renderRanking(ranking, scoreLabel = "Wynik") {
     })
     .join("");
 
+  const head = splitStats
+    ? `<tr>
+        <th>#</th>
+        <th>Gracz</th>
+        <th>${esc(scoreLabel)}</th>
+        <th>${esc(diffLabel)}</th>
+        <th>${esc(notesLabel)}</th>
+      </tr>`
+    : `<tr>
+        <th>#</th>
+        <th>Gracz</th>
+        <th>${esc(scoreLabel)}</th>
+        <th>${esc(notesLabel)}</th>
+      </tr>`;
+
   return `
     <section class="block">
       ${sectionTitle("Ranking", ranking.length)}
+      ${hint ? `<p class="hint">${esc(hint)}</p>` : ""}
       <div class="table-wrap">
         <table class="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Gracz</th>
-              <th>${esc(scoreLabel)}</th>
-              <th>Uwagi</th>
-            </tr>
-          </thead>
+          <thead>${head}</thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
     </section>`;
 }
 
-function renderBasketball(disc) {
+/**
+ * @param {any} disc
+ * @param {Set<string>} [expandedNames]
+ */
+function renderBasketball(disc, expandedNames = new Set()) {
   const players = disc.players || [];
   if (!players.length) {
     return emptyBlock("Brak graczy w arkuszu Koszykówka.");
   }
 
   const sorted = [...players].sort(
-    (a, b) => (b.scoreNum ?? -1) - (a.scoreNum ?? -1)
+    (a, b) => (b.scoreNum ?? -Infinity) - (a.scoreNum ?? -Infinity)
   );
+
+  const shotKeys = ["1P", "2P", "3P", "UK1", "UK2"];
 
   const rows = sorted
     .map((p, i) => {
-      const attemptKeys = Object.keys(p.attempts || {});
-      const detail =
-        attemptKeys.length > 0
-          ? `<details class="attempts">
-              <summary>Próby</summary>
-              <div class="attempt-grid">
-                ${attemptKeys
-                  .map(
-                    (k) =>
-                      `<span class="attempt-item"><strong>${esc(k)}</strong>: ${esc(p.attempts[k])}</span>`
-                  )
-                  .join("")}
-              </div>
-            </details>`
-          : "";
+      const hasAttempts = (p.attemptRows && p.attemptRows.length > 0) ||
+        Object.keys(p.attempts || {}).length > 0;
+      const expanded = expandedNames.has(p.name);
+      const scoreDisplay = p.score || "—";
+
+      let attemptBlock = "";
+      if (expanded && p.attemptRows?.length) {
+        const head = shotKeys.map((k) => `<th>${k}</th>`).join("");
+        const resolvedRows = p.resolvedAttemptRows || null;
+        const body = p.attemptRows
+          .map((ar, ri) => {
+            const cells = shotKeys
+              .map((k) => {
+                const raw = ar.shots[k] || "";
+                if (/^s$/i.test(String(raw).trim())) {
+                  const resolved = resolvedRows?.[ri]?.shots?.[k] || "";
+                  const label = resolved
+                    ? `S (${resolved})`
+                    : "S";
+                  return `<td class="shot-s" title="S = 50% najgorszy ${k} + 50% średnia ${k}">${esc(label)}</td>`;
+                }
+                return `<td>${esc(raw)}</td>`;
+              })
+              .join("");
+            return `<tr>${cells}</tr>`;
+          })
+          .join("");
+        attemptBlock = `
+          <div class="attempt-panel" data-player-attempts="${esc(p.name)}">
+            <table class="attempt-table">
+              <thead><tr>${head}</tr></thead>
+              <tbody>${body}</tbody>
+            </table>
+          </div>`;
+      } else if (expanded && hasAttempts && !p.attemptRows?.length) {
+        // Fallback flat attempts if structure missing
+        const items = Object.entries(p.attempts || {})
+          .map(
+            ([k, v]) =>
+              `<span class="attempt-item"><strong>${esc(k)}</strong>: ${esc(v)}</span>`
+          )
+          .join("");
+        attemptBlock = `<div class="attempt-panel attempt-grid">${items}</div>`;
+      }
+
+      const nameClass = hasAttempts
+        ? "player-name player-name--toggle"
+        : "player-name";
+      const aria = hasAttempts
+        ? ` role="button" tabindex="0" aria-expanded="${expanded}" data-toggle-player="${esc(p.name)}"`
+        : "";
+      const chevron = hasAttempts
+        ? `<span class="chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span>`
+        : "";
+
       return `
-        <tr>
+        <tr class="bball-row ${expanded ? "is-expanded" : ""}">
           <td class="col-place"><span class="place-pill">${i + 1}</span></td>
           <td>
-            <div class="player-name">${esc(p.name)}</div>
-            ${detail}
+            <div class="${nameClass}"${aria}>${chevron}<span>${esc(p.name)}</span></div>
+            ${attemptBlock}
           </td>
-          <td class="col-stat score-cell">${esc(p.score || "—")}</td>
+          <td class="col-stat score-cell">${esc(scoreDisplay)}</td>
         </tr>`;
     })
     .join("");
@@ -196,9 +279,9 @@ function renderBasketball(disc) {
   return `
     <section class="block">
       ${sectionTitle("Gracze / Ranking", sorted.length)}
-      <p class="hint">Sortowanie według wyniku (malejąco).</p>
+      <p class="hint">Wynik: 50% najlepsza próba + 50% średnia z pozostałych (1 próba = średnia z tej próby). Litera „S” w komórce próby = 50% najgorszy wynik tego typu rzutu (1P/2P/…) spośród wszystkich graczy i prób + 50% średnia tego typu. Sortowanie malejąco. Kliknij gracza, aby zobaczyć próby.</p>
       <div class="table-wrap">
-        <table class="data-table">
+        <table class="data-table data-table--basketball">
           <thead>
             <tr><th>#</th><th>Gracz</th><th>Wynik</th></tr>
           </thead>
@@ -296,7 +379,7 @@ export function renderInfo(data) {
     <div class="hero">
       <p class="hero-kicker">Turniej sportowy</p>
       <h1 class="hero-title">${esc(title)}</h1>
-      <p class="hero-sub">Aktualne wyniki i składy z Google Sheets</p>
+      <p class="hero-sub">Informacje i regulamin</p>
     </div>
     ${cacheNote}
     ${errNote}
@@ -312,8 +395,9 @@ export function renderInfo(data) {
  * Render a discipline tab by id.
  * @param {string} tabId
  * @param {any} data
+ * @param {{ expandedBasketball?: Set<string> }} [uiState]
  */
-export function renderDiscipline(tabId, data) {
+export function renderDiscipline(tabId, data, uiState = {}) {
   const disc = data?.disciplines?.[tabId];
   if (!disc) {
     return emptyBlock("Brak danych dla tej dyscypliny.");
@@ -324,7 +408,7 @@ export function renderDiscipline(tabId, data) {
       <header class="page-header">
         <h1>${esc(disc.title || "Koszykówka")}</h1>
       </header>
-      ${renderBasketball(disc)}
+      ${renderBasketball(disc, uiState.expandedBasketball || new Set())}
     `;
   }
 
@@ -345,29 +429,44 @@ export function renderDiscipline(tabId, data) {
     </header>
   `);
 
-  if (disc.teams?.length) {
-    parts.push(renderTeams(disc.teams));
-  } else if (disc.players?.length && tabId === "badminton") {
-    parts.push(renderPlayersList(disc.players, "Gracze"));
+  const isTeamSport = tabId === "pilka" || tabId === "siatkowka";
+
+  if (isTeamSport) {
+    // Mecze → Drużyny → Ranking
+    parts.push(renderMatches(disc.matches));
+    if (disc.teams?.length) {
+      parts.push(renderTeams(disc.teams));
+    }
+  } else {
+    // Badminton: gracze → mecze
+    if (disc.players?.length) {
+      parts.push(renderPlayersList(disc.players, "Gracze"));
+    }
+    parts.push(renderMatches(disc.matches));
   }
 
-  parts.push(renderMatches(disc.matches));
-
-  const scoreLabel =
-    tabId === "siatkowka"
-      ? "Sety / %"
-      : tabId === "pilka"
-        ? "Gole / %"
-        : "Statystyki";
-  if (disc.ranking?.length || tabId !== "badminton") {
-    // always show ranking block for team sports; for badminton only if data
-    if (disc.ranking?.length || tabId === "pilka" || tabId === "siatkowka") {
-      parts.push(renderRanking(disc.ranking, scoreLabel));
-    } else if (disc.ranking?.length) {
-      parts.push(renderRanking(disc.ranking, scoreLabel));
-    }
+  if (tabId === "siatkowka") {
+    parts.push(
+      renderRanking(disc.ranking, {
+        scoreLabel: "Zwycięstwa / mecze",
+        diffLabel: "Różnica setów",
+        notesLabel: "Drużyny",
+        splitStats: true,
+        hint:
+          "Ranking liczony automatycznie: % zwycięstw (malejąco), potem różnica setów (malejąco). Gracz w obu drużynach meczu — mecz liczy się z obu perspektyw.",
+        emptyMessage:
+          "Brak graczy w drużynach — uzupełnij składy w arkuszu Siatkówka.",
+      })
+    );
+  } else if (tabId === "pilka") {
+    parts.push(
+      renderRanking(disc.ranking, {
+        scoreLabel: "Gole / %",
+        emptyMessage: "Ranking jest pusty — uzupełnij w arkuszu.",
+      })
+    );
   } else if (disc.ranking?.length) {
-    parts.push(renderRanking(disc.ranking, scoreLabel));
+    parts.push(renderRanking(disc.ranking, "Statystyki"));
   }
 
   return parts.join("");
