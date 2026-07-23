@@ -22,6 +22,8 @@ const state = {
   expandedAttempts: new Set(),
   /** @type {string|null} single expanded player on Gracze tab */
   expandedGracz: null,
+  /** @type {string|null} expanded team-sport match key (roster panel) */
+  expandedMatchKey: null,
 };
 
 const els = {
@@ -50,6 +52,8 @@ function updateNav() {
 function switchTab(tabId) {
   if (!TABS.some((t) => t.id === tabId)) return;
   state.activeTab = tabId;
+  // Collapse expandables when leaving their context
+  state.expandedMatchKey = null;
   // Persist tab in hash for deep links / refresh
   if (location.hash.replace("#", "") !== tabId) {
     history.replaceState(null, "", `#${tabId}`);
@@ -82,11 +86,13 @@ function render() {
     els.content.innerHTML = renderDiscipline(state.activeTab, state.data, {
       expandedAttempts: state.expandedAttempts,
       expandedGracz: state.expandedGracz,
+      expandedMatchKey: state.expandedMatchKey,
     });
   }
 
   bindAttemptToggles();
   bindGraczToggles();
+  bindMatchToggles();
 
   if (els.refreshBtn) {
     els.refreshBtn.disabled = state.loading;
@@ -131,6 +137,29 @@ function bindGraczToggles() {
       state.expandedGracz =
         state.expandedGracz === name ? null : name;
       render();
+    });
+  });
+}
+
+function bindMatchToggles() {
+  if (!els.content) return;
+  els.content.querySelectorAll("[data-toggle-match]").forEach((el) => {
+    const key = el.getAttribute("data-toggle-match");
+    if (key == null) return;
+    const toggle = () => {
+      state.expandedMatchKey =
+        state.expandedMatchKey === key ? null : key;
+      render();
+    };
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggle();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
     });
   });
 }

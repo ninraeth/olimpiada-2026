@@ -22,8 +22,8 @@ export const SHEET_GIDS = {
 export const TABS = [
   { id: "info", label: "Info", sheet: "Info", icon: "ℹ️" },
   { id: "gracze", label: "Gracze", sheet: "Gracze", icon: "👥" },
-  { id: "pilka", label: "Piłka Nożna", sheet: "Piłka Nożna", icon: "⚽" },
-  { id: "pilka_ind", label: "Piłka ind.", sheet: "Piłka ind.", icon: "🎯" },
+  { id: "pilka", label: "Piłka Nożna", sheet: "Piłka Nożna", icon: "🏟️" },
+  { id: "pilka_ind", label: "Piłka ind.", sheet: "Piłka ind.", icon: "⚽" },
   { id: "siatkowka", label: "Siatkówka", sheet: "Siatkówka", icon: "🏐" },
   { id: "koszykowka", label: "Koszykówka", sheet: "Koszykówka", icon: "🏀" },
   { id: "badminton", label: "Badminton", sheet: "Badminton", icon: "🏸" },

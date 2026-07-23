@@ -168,13 +168,14 @@ function detectHeaderType(row) {
     return "ranking";
   }
 
-  // Medals before teams — headers "medal | nazwa | gracze" must not look like teams
+  // Medals before teams — "medal | nazwa | gracze" or "medal | Nazwa drużyny | Gracz 1…"
   if (
     joined.includes("medal") &&
     (joined.includes("nazwa") ||
       joined.includes("gracze") ||
       joined.includes("sklad") ||
-      joined.includes("skład"))
+      joined.includes("skład") ||
+      /gracz\s*\d/.test(joined))
   ) {
     return "medals";
   }
@@ -891,6 +892,7 @@ function defaultMedalSlots() {
     medal,
     name: "",
     players: "",
+    playerList: [],
   }));
 }
 
@@ -903,14 +905,19 @@ function normalizeMedalList(list) {
   for (const m of list || []) {
     const key = normalizeMedalKey(m.medal || m.place || "");
     if (!key) continue;
+    const playerList = Array.isArray(m.playerList)
+      ? m.playerList.filter(Boolean)
+      : splitPlayerList(m.players || "");
     byKey.set(key, {
       medal: key,
       name: cellStr(m.name),
-      players: cellStr(m.players),
+      players: playerList.length ? playerList.join(", ") : cellStr(m.players),
+      playerList,
     });
   }
   return MEDAL_ORDER.map(
-    (medal) => byKey.get(medal) || { medal, name: "", players: "" }
+    (medal) =>
+      byKey.get(medal) || { medal, name: "", players: "", playerList: [] }
   );
 }
 
@@ -947,7 +954,9 @@ function normalizeMedalKey(raw) {
 
 /**
  * Parse Strefa medalowa table rows.
- * Expected: medal | nazwa | gracze
+ * Formats:
+ *   - Team sports: medal | Nazwa drużyny | Gracz 1 | Gracz 2 | … (one player per cell)
+ *   - Individual:  medal | nazwa | gracze (comma-separated or single name)
  * @param {string[]} headers
  * @param {string[][]} rows
  */
@@ -960,20 +969,34 @@ function parseMedalSection(headers, rows) {
   let medalIdx = norms.findIndex(
     (x) => x.includes("medal") || x.includes("miejsce") || x === "pos"
   );
+  // Prefer explicit team/name columns; avoid matching "Gracz 1" as the name column
   let nameIdx = norms.findIndex(
     (x) =>
       x.includes("nazwa") ||
       x.includes("druzyna") ||
-      (x.includes("gracz") && !x.includes("gracze")) ||
       x.includes("zwyciezca") ||
       x === "imie"
   );
-  let playersIdx = norms.findIndex(
+  if (nameIdx < 0) {
+    nameIdx = norms.findIndex(
+      (x) => x.includes("gracz") && !x.includes("gracze") && !/^gracz\s*\d/.test(x)
+    );
+  }
+  // Single "gracze" / "skład" column (legacy individual layout)
+  let playersColIdx = norms.findIndex(
     (x) =>
       x.includes("gracze") ||
       x.includes("sklad") ||
       x.includes("zawodnicy") ||
       x.includes("skład")
+  );
+  // Multi-column roster like teams: "Gracz 1", "Gracz 2", …
+  let playerColsStart = norms.findIndex(
+    (x) =>
+      /^gracz(\s*\d+)?$/.test(x) ||
+      /^gracz\s+\d+/.test(x) ||
+      x === "zawodnik" ||
+      /^zawodnik\s*\d/.test(x)
   );
 
   const headerLooksLikeData = h.some((c) => normalizeMedalKey(c));
@@ -984,11 +1007,11 @@ function parseMedalSection(headers, rows) {
     dataRows = [headers, ...(rows || [])];
     medalIdx = 0;
     nameIdx = 1;
-    playersIdx = 2;
+    playersColIdx = 2;
+    playerColsStart = -1;
   } else {
     if (medalIdx < 0) medalIdx = 0;
     if (nameIdx < 0) nameIdx = Math.min(1, h.length ? 1 : 0);
-    if (playersIdx < 0) playersIdx = 2;
   }
 
   for (const row of dataRows) {
@@ -998,18 +1021,82 @@ function parseMedalSection(headers, rows) {
     if (!medal) continue;
 
     let name = cellStr(row[nameIdx]);
-    let players = playersIdx >= 0 ? cellStr(row[playersIdx]) : "";
-
     if (normalizeMedalKey(name) === medal) {
       name = cellStr(row[nameIdx + 1] ?? row[1]);
-      if (!players) players = cellStr(row[nameIdx + 2] ?? row[2]);
     }
-    if (/^(nazwa|gracze|medal|sklad|skład)$/i.test(name)) continue;
+    if (/^(nazwa|nazwa druzyny|gracze|medal|sklad|skład|gracz\s*\d*)$/i.test(name)) {
+      continue;
+    }
+
+    /** @type {string[]} */
+    const playerList = [];
+    const seen = new Set();
+    const addPlayer = (raw) => {
+      for (const p of splitPlayerList(raw)) {
+        if (isJunkPlayerToken(p)) continue;
+        if (name && normName(p) === normName(name)) continue;
+        const key = normName(p);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        playerList.push(p);
+      }
+    };
+
+    if (playerColsStart >= 0) {
+      // One player per column (team-style layout)
+      const width = Math.max(h.length, row.length);
+      for (let i = playerColsStart; i < width; i++) {
+        if (i === medalIdx || i === nameIdx) continue;
+        const hNorm = norms[i] || "";
+        // Stop if a non-player section header leaked in
+        if (
+          hNorm === "faza" ||
+          hNorm.includes("wynik") ||
+          hNorm.includes("id_meczu") ||
+          hNorm === "miejsce"
+        ) {
+          break;
+        }
+        // If headers exist and this column is not a player/empty label, skip non-player cols after start
+        if (
+          hNorm &&
+          !/^gracz/.test(hNorm) &&
+          !/^zawodnik/.test(hNorm) &&
+          hNorm !== "gracze" &&
+          !hNorm.includes("sklad") &&
+          !hNorm.includes("zawodnicy")
+        ) {
+          // Allow empty header cells (wide CSV padding)
+          if (hNorm.length > 0) continue;
+        }
+        addPlayer(cellStr(row[i]));
+      }
+    } else if (playersColIdx >= 0) {
+      // Single cell, possibly comma-separated
+      addPlayer(cellStr(row[playersColIdx]));
+      // Also gather any further non-empty cells after name (robust multi-col without headers)
+      const width = Math.max(h.length, row.length);
+      for (let i = playersColIdx + 1; i < width; i++) {
+        if (i === medalIdx || i === nameIdx) continue;
+        const c = cellStr(row[i]);
+        if (!c) continue;
+        addPlayer(c);
+      }
+    } else {
+      // Fallback: everything after name column is a player cell
+      const start = Math.max(nameIdx + 1, medalIdx + 1, 2);
+      const width = Math.max(h.length, row.length);
+      for (let i = start; i < width; i++) {
+        if (i === medalIdx || i === nameIdx) continue;
+        addPlayer(cellStr(row[i]));
+      }
+    }
 
     out.push({
       medal,
       name: name || "",
-      players: players || "",
+      players: playerList.join(", "),
+      playerList,
     });
   }
   return out;
@@ -1027,7 +1114,9 @@ function rowLooksLikeColumnHeaders(row) {
   const joined = norms.join(" | ");
   if (joined.includes("nazwa druz") || joined.includes("nazwa dru")) return true;
   if (/gracz\s*\d/.test(joined) || joined.includes("gracze")) return true;
-  if (joined.includes("medal") && joined.includes("nazwa")) return true;
+  if (joined.includes("medal") && (joined.includes("nazwa") || /gracz\s*\d/.test(joined))) {
+    return true;
+  }
   if (joined.includes("faza") && (joined.includes("druzyna") || joined.includes("wynik"))) {
     return true;
   }
@@ -1256,8 +1345,10 @@ export function parseDisciplineSheet(sheetName, rows) {
     matches: [],
     ranking: [],
     players: [],
-    medals: [], // Strefa medalowa: złoty / srebrny / brązowy
-    sections: [], // generic for Inne
+    medals: [], // Strefa medalowa: złoty / srebrny / brązowy (single zone)
+    /** Multi-event sheets (Inne): each # SEKCJA + following # STREFA MEDALOWA */
+    competitions: [],
+    sections: [], // legacy generic sections (not used for Inne display)
   };
 
   // First info-line as title
@@ -1313,20 +1404,31 @@ export function parseDisciplineSheet(sheetName, rows) {
         }
       }
     } else if (sec.type === "medals") {
-      const parsed = parseMedalSection(sec.headers, sec.rows);
-      if (parsed.length) result.medals = parsed;
+      const parsed = normalizeMedalList(parseMedalSection(sec.headers, sec.rows));
+      // Attach to the last open competition (Inne: one medal zone per # SEKCJA)
+      if (result.competitions.length) {
+        result.competitions[result.competitions.length - 1].medals = parsed;
+      } else {
+        result.medals = parsed;
+      }
     } else if (sec.type === "section") {
-      const headers = sec.headers;
+      // Named competition block (Inne): results tables ignored — only name + medals matter
+      const name = cellStr(sec.title) || "Konkurencja";
+      result.competitions.push({
+        name,
+        medals: defaultMedalSlots(),
+      });
+      // Keep raw section data available for debugging / future use, without empty noise
+      const headers = sec.headers || [];
       const dataRows = [];
       for (const row of sec.rows) {
         if (isCommentRow(row)) continue;
         const obj = parseGenericRow(headers, row);
         if (obj) dataRows.push(obj);
       }
-      // Only include sections with data or at least headers
-      if (headers.length) {
+      if (headers.length || dataRows.length) {
         result.sections.push({
-          title: sec.title,
+          title: name,
           headers: headers.filter((h) => h && !/^id_/i.test(h)),
           rows: dataRows,
         });
@@ -1339,6 +1441,10 @@ export function parseDisciplineSheet(sheetName, rows) {
     result.medals = defaultMedalSlots();
   } else {
     result.medals = normalizeMedalList(result.medals);
+  }
+  // Normalize competition medal lists
+  for (const comp of result.competitions) {
+    comp.medals = normalizeMedalList(comp.medals || []);
   }
 
   // Legacy skill sheet: no # GRACZE, only header with ID_gracza
@@ -1979,11 +2085,13 @@ const DISCIPLINE_LABELS = {
  * @param {any} disc
  */
 function medalAwardsPlayer(playerName, entry, disc) {
-  if (!entry?.name && !entry?.players) return false;
+  if (!entry?.name && !entry?.players && !entry?.playerList?.length) return false;
   if (namesMatch(entry.name, playerName)) return { via: null };
 
-  // Explicit roster in medal row
-  const listed = splitPlayerList(entry.players || "");
+  // Explicit roster in medal row (multi-column or comma-separated)
+  const listed = Array.isArray(entry.playerList) && entry.playerList.length
+    ? entry.playerList
+    : splitPlayerList(entry.players || "");
   if (listed.some((p) => namesMatch(p, playerName))) {
     return { via: entry.name || null };
   }
@@ -2028,19 +2136,40 @@ export function collectPlayerMedals(playerName, disciplines) {
 
   for (const id of order) {
     const disc = disciplines?.[id];
-    if (!disc?.medals?.length) continue;
-    const label = DISCIPLINE_LABELS[id] || disc.title || id;
-    for (const entry of disc.medals) {
-      if (!entry.name && !entry.players) continue;
-      const hit = medalAwardsPlayer(playerName, entry, disc);
-      if (!hit) continue;
-      awards.push({
-        medal: entry.medal,
-        disciplineId: id,
-        discipline: label,
-        recipient: entry.name || playerName,
-        via: hit.via,
+    if (!disc) continue;
+
+    /** @type {{ label: string, medals: any[], context: any }[]} */
+    const pools = [];
+    // Multi-event sheet (Inne): one medal zone per competition name
+    if (disc.competitions?.length) {
+      for (const comp of disc.competitions) {
+        pools.push({
+          label: comp.name || DISCIPLINE_LABELS[id] || id,
+          medals: comp.medals || [],
+          context: disc,
+        });
+      }
+    } else if (disc.medals?.length) {
+      pools.push({
+        label: DISCIPLINE_LABELS[id] || disc.title || id,
+        medals: disc.medals,
+        context: disc,
       });
+    }
+
+    for (const pool of pools) {
+      for (const entry of pool.medals) {
+        if (!entry.name && !entry.players && !entry.playerList?.length) continue;
+        const hit = medalAwardsPlayer(playerName, entry, pool.context);
+        if (!hit) continue;
+        awards.push({
+          medal: entry.medal,
+          disciplineId: id,
+          discipline: pool.label,
+          recipient: entry.name || playerName,
+          via: hit.via,
+        });
+      }
     }
   }
 

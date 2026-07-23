@@ -83,28 +83,139 @@ function renderPlayersList(players, title = "Gracze") {
     </section>`;
 }
 
-function renderMatches(matches) {
+/**
+ * Normalize label for team name lookup (local to render).
+ * @param {string} s
+ */
+function normLabel(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Find team roster by match side name.
+ * @param {{ name: string, players?: string[] }[]|null|undefined} teams
+ * @param {string} sideName
+ * @returns {string[]}
+ */
+function rosterForSide(teams, sideName) {
+  if (!teams?.length || !sideName) return [];
+  const key = normLabel(sideName);
+  if (!key || key === "tbd" || key === "—") return [];
+  const team = teams.find((t) => normLabel(t.name) === key);
+  if (!team) {
+    // loose: strip non-alphanumeric
+    const loose = key.replace(/[^a-z0-9]/g, "");
+    const t2 = teams.find(
+      (t) => normLabel(t.name).replace(/[^a-z0-9]/g, "") === loose
+    );
+    if (!t2) return [];
+    return Array.isArray(t2.players) ? [...t2.players] : [];
+  }
+  return Array.isArray(team.players) ? [...team.players] : [];
+}
+
+/**
+ * Expanded roster panel under a team-sport match.
+ * Players A–Z (pl), one name per row, two columns (side1 | side2).
+ * @param {any} match
+ * @param {{ name: string, players?: string[] }[]|null|undefined} teams
+ */
+function renderMatchRosters(match, teams) {
+  const sideBlock = (sideName) => {
+    const players = rosterForSide(teams, sideName).sort((a, b) =>
+      a.localeCompare(b, "pl", { sensitivity: "base" })
+    );
+    const rows = players.length
+      ? players.map((p) => `<li class="match-roster-player">${esc(p)}</li>`).join("")
+      : `<li class="match-roster-player muted">Brak składu</li>`;
+    return `
+      <div class="match-roster">
+        <h4 class="match-roster-team">${esc(sideName || "—")}</h4>
+        <ul class="match-roster-list">${rows}</ul>
+      </div>`;
+  };
+  return `
+    <div class="match-rosters">
+      ${sideBlock(match.side1)}
+      ${sideBlock(match.side2)}
+    </div>`;
+}
+
+/**
+ * @param {any[]} matches
+ * @param {{
+ *   teams?: { name: string, players?: string[] }[]|null,
+ *   expandable?: boolean,
+ *   expandedMatchKey?: string|null,
+ * }} [opts]
+ */
+function renderMatches(matches, opts = {}) {
   if (!matches?.length) return emptyBlock("Brak meczów w arkuszu.");
-  const groups = groupByPhase(matches);
+  const expandable = Boolean(opts.expandable);
+  const teams = opts.teams || null;
+  const expandedKey = opts.expandedMatchKey ?? null;
+
+  // Preserve original index for stable expand keys across phase groups
+  const indexed = matches.map((m, i) => ({ m, key: String(i) }));
+  /** @type {Map<string, typeof indexed>} */
+  const groups = new Map();
+  for (const item of indexed) {
+    const phase = item.m.phase || "Inne";
+    if (!groups.has(phase)) groups.set(phase, []);
+    groups.get(phase).push(item);
+  }
+
   let html = `<section class="block">${sectionTitle("Mecze", matches.length)}`;
+  if (expandable) {
+    html += `<p class="hint">Dotknij aby zobaczyć składy drużyn</p>`;
+  }
 
   for (const [phase, list] of groups) {
     html += `<h3 class="phase-title">${esc(phase)}</h3>`;
     html += `<div class="match-list">`;
-    for (const m of list) {
+    for (const { m, key } of list) {
       const hasScore = Boolean(m.score);
+      const expanded = expandable && expandedKey === key;
+      const classes = [
+        "match-card",
+        hasScore ? "has-score" : "pending",
+        expandable ? "is-expandable" : "",
+        expanded ? "is-expanded" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const toggleAttrs = expandable
+        ? ` role="button" tabindex="0" aria-expanded="${expanded}" data-toggle-match="${esc(key)}"`
+        : "";
+      const chevron = expandable
+        ? `<span class="match-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span>`
+        : "";
+      const roster =
+        expandable && expanded ? renderMatchRosters(m, teams) : "";
+
       html += `
-        <article class="match-card ${hasScore ? "has-score" : "pending"}">
-          <div class="match-sides">
-            <span class="side side-a">${esc(m.side1)}</span>
-            <span class="match-vs">${hasScore ? esc(m.score) : "vs"}</span>
-            <span class="side side-b">${esc(m.side2)}</span>
+        <article class="${classes}"${toggleAttrs}>
+          <div class="match-main">
+            <div class="match-sides">
+              <span class="side side-a">${esc(m.side1)}</span>
+              <span class="match-vs">${hasScore ? esc(m.score) : "vs"}</span>
+              <span class="side side-b">${esc(m.side2)}</span>
+            </div>
+            <div class="match-meta">
+              ${
+                hasScore
+                  ? `<span class="badge badge-score">Wynik</span>`
+                  : `<span class="badge badge-pending">Oczekuje</span>`
+              }
+              ${chevron}
+            </div>
           </div>
-          ${
-            hasScore
-              ? `<span class="badge badge-score">Wynik</span>`
-              : `<span class="badge badge-pending">Oczekuje</span>`
-          }
+          ${roster}
         </article>`;
     }
     html += `</div>`;
@@ -115,13 +226,14 @@ function renderMatches(matches) {
 
 /**
  * @param {any[]} ranking
- * @param {string | { scoreLabel?: string, diffLabel?: string, notesLabel?: string, hint?: string, emptyMessage?: string, splitStats?: boolean }} [opts]
+ * @param {string | { title?: string, scoreLabel?: string, diffLabel?: string, notesLabel?: string, hint?: string, emptyMessage?: string, splitStats?: boolean }} [opts]
  */
 function renderRanking(ranking, opts = "Wynik") {
   const options =
     typeof opts === "string"
       ? { scoreLabel: opts }
       : opts || {};
+  const title = options.title || "Ranking";
   const scoreLabel = options.scoreLabel || "Wynik";
   const diffLabel = options.diffLabel || "Różnica";
   const notesLabel = options.notesLabel || "Uwagi";
@@ -135,7 +247,8 @@ function renderRanking(ranking, opts = "Wynik") {
   if (!ranking?.length) {
     return `
       <section class="block">
-        ${sectionTitle("Ranking")}
+        ${sectionTitle(title)}
+        ${hint ? `<p class="hint">${esc(hint)}</p>` : ""}
         ${emptyBlock(emptyMessage)}
       </section>`;
   }
@@ -181,7 +294,7 @@ function renderRanking(ranking, opts = "Wynik") {
 
   return `
     <section class="block">
-      ${sectionTitle("Ranking", ranking.length)}
+      ${sectionTitle(title, ranking.length)}
       ${hint ? `<p class="hint">${esc(hint)}</p>` : ""}
       <div class="table-wrap">
         <table class="data-table">
@@ -227,8 +340,11 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
 
       let attemptBlock = "";
       if (expanded && p.attemptRows?.length) {
-        const head = shotKeys.map((k) => `<th>${esc(k)}</th>`).join("");
+        const head =
+          shotKeys.map((k) => `<th>${esc(k)}</th>`).join("") +
+          `<th class="col-attempt-avg" title="Średnia próby">⌀</th>`;
         const resolvedRows = p.resolvedAttemptRows || null;
+        const means = p.attemptMeans || [];
         const body = p.attemptRows
           .map((ar, ri) => {
             const cells = shotKeys
@@ -242,7 +358,12 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
                 return `<td>${esc(raw)}</td>`;
               })
               .join("");
-            return `<tr>${cells}</tr>`;
+            const mean = means[ri];
+            const meanStr =
+              mean != null && Number.isFinite(mean)
+                ? (Math.round(mean * 100) / 100).toFixed(2)
+                : "—";
+            return `<tr>${cells}<td class="col-attempt-avg" title="Średnia próby">${esc(meanStr)}</td></tr>`;
           })
           .join("");
         attemptBlock = `
@@ -287,7 +408,7 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
   return `
     <section class="block">
       ${sectionTitle("Gracze / Ranking", sorted.length)}
-      <p class="hint">Wynik = (średnia najlepszej próby + średnia pozostałych prób) / 2. 1 próba → średnia z ${esc(categoriesLabel)}. „S” w komórce = 50% najgorszy wynik tego typu (wszyscy gracze/próby) + 50% średnia tego typu. Sortowanie malejąco. Kliknij gracza → próby.</p>
+      <p class="hint">Średnia z najlepszej próby (50%) i pozostałych prób (50%)</p>
       <div class="table-wrap">
         <table class="data-table data-table--basketball">
           <thead>
@@ -416,17 +537,6 @@ function renderPlayerMatchCard(m) {
             ? "pmatch--draw"
             : "pmatch--pending";
 
-  const outcomeLabel =
-    outcome === "win"
-      ? "Wygrana"
-      : outcome === "loss"
-        ? "Porażka"
-        : outcome === "both"
-          ? "Obie drużyny"
-          : outcome === "draw"
-            ? "Remis"
-            : "Zaplanowany";
-
   const side = (name, mine) =>
     `<span class="pmatch-side ${mine ? "pmatch-side--mine" : ""}">${esc(name)}</span>`;
 
@@ -435,14 +545,23 @@ function renderPlayerMatchCard(m) {
     : `<span class="pmatch-score pmatch-score--vs">vs</span>`;
 
   return `
-    <article class="pmatch ${outcomeClass}">
+    <article class="pmatch ${outcomeClass}" title="${esc(
+      outcome === "win"
+        ? "Wygrana"
+        : outcome === "loss"
+          ? "Porażka"
+          : outcome === "both"
+            ? "Obie drużyny"
+            : outcome === "draw"
+              ? "Remis"
+              : "Zaplanowany"
+    )}">
       <div class="pmatch-phase">${esc(m.phase || "—")}</div>
       <div class="pmatch-body">
         ${side(m.side1, m.mine1)}
         ${scoreOrVs}
         ${side(m.side2, m.mine2)}
       </div>
-      <span class="pmatch-badge">${outcomeLabel}</span>
     </article>`;
 }
 
@@ -502,31 +621,24 @@ const MEDAL_EMOJI = {
 };
 
 /**
- * Compact medal icons for the player row (max ~7 medals).
- * Uses count badges (e.g. 2×🥇) when there are many of the same type.
+ * Medal icons next to the player name — every medal shown separately.
+ * Order left → right: złoty, srebrny, brązowy.
  * @param {{ medal: string }[]} awards
  */
 function renderMedalIcons(awards) {
   if (!awards?.length) return "";
-  const counts = { złoty: 0, srebrny: 0, brązowy: 0 };
-  for (const a of awards) {
-    if (counts[a.medal] != null) counts[a.medal] += 1;
-  }
-  const parts = [];
-  for (const key of ["złoty", "srebrny", "brązowy"]) {
-    const n = counts[key];
-    if (!n) continue;
-    const emoji = MEDAL_EMOJI[key];
-    if (n === 1) {
-      parts.push(
-        `<span class="medal-icon medal-icon--${key}" title="${esc(key)}">${emoji}</span>`
-      );
-    } else {
-      parts.push(
-        `<span class="medal-icon medal-icon--${key} medal-icon--multi" title="${n}× ${esc(key)}"><span class="medal-count">${n}×</span>${emoji}</span>`
-      );
-    }
-  }
+  const rank = { złoty: 0, srebrny: 1, brązowy: 2 };
+  const sorted = [...awards].sort(
+    (a, b) => (rank[a.medal] ?? 9) - (rank[b.medal] ?? 9)
+  );
+  const parts = sorted
+    .map((a) => {
+      const key = a.medal;
+      const emoji = MEDAL_EMOJI[key];
+      if (!emoji) return "";
+      return `<span class="medal-icon medal-icon--${esc(key)}" title="${esc(key)}">${emoji}</span>`;
+    })
+    .filter(Boolean);
   if (!parts.length) return "";
   return `<span class="medal-icons" aria-label="Medale">${parts.join("")}</span>`;
 }
@@ -586,7 +698,7 @@ export function renderGracze(data, expandedName = null) {
   const directory = data?.playersDirectory || [];
   if (!directory.length) {
     return `
-      <header class="page-header"><h1>Gracze</h1></header>
+      <header class="page-header"><h1>Gracze - Klasyfikacja medalowa</h1></header>
       ${emptyBlock("Brak listy graczy w arkuszu „Gracze”.")}
     `;
   }
@@ -626,8 +738,8 @@ export function renderGracze(data, expandedName = null) {
 
   return `
     <header class="page-header">
-      <h1>Gracze</h1>
-      <p class="hint">Sortowanie: złote → srebrne → brązowe medale, potem alfabetycznie. Kliknij gracza, aby zobaczyć medale i wyniki (tylko jeden rozwinięty naraz).</p>
+      <h1>Gracze - Klasyfikacja medalowa</h1>
+      <p class="hint">Dotknij aby rozwinąć</p>
     </header>
     <ul class="gracz-list">${items}</ul>
   `;
@@ -636,8 +748,9 @@ export function renderGracze(data, expandedName = null) {
 /**
  * Strefa medalowa — złoty / srebrny / brązowy (ręczne wpisy z arkusza).
  * @param {any[]} medals
+ * @param {{ heading?: string|null }} [opts] heading defaults to "Strefa medalowa"; null = no title
  */
-function renderMedalZone(medals) {
+function renderMedalZone(medals, opts = {}) {
   const list = medals?.length
     ? medals
     : [
@@ -665,7 +778,7 @@ function renderMedalZone(medals) {
       const playersHtml = players
         ? `<p class="medal-players">${esc(players)}</p>`
         : "";
-      const empty = !m.name;
+      const empty = !m.name && !players;
       return `
         <article class="medal-card ${info.cls} ${empty ? "is-empty" : ""}">
           <div class="medal-emoji" aria-hidden="true">${info.emoji}</div>
@@ -676,12 +789,47 @@ function renderMedalZone(medals) {
     })
     .join("");
 
+  const heading =
+    opts.heading === null
+      ? ""
+      : sectionTitle(opts.heading || "Strefa medalowa");
+
   return `
     <section class="block medal-zone">
-      ${sectionTitle("Strefa medalowa")}
-      <p class="hint">Miejsca medalowe wpisywane ręcznie w arkuszu (sekcja # STREFA MEDALOWA).</p>
+      ${heading}
       <div class="medal-grid">${cards}</div>
     </section>`;
+}
+
+/**
+ * Inne: only competition names + per-event medal zones (no results tables).
+ * @param {any} disc
+ */
+function renderInne(disc) {
+  const title = disc?.title || "Inne konkurencje";
+  const competitions = disc?.competitions || [];
+
+  let body = "";
+  if (competitions.length) {
+    body = competitions
+      .map((comp) =>
+        renderMedalZone(comp.medals, {
+          heading: comp.name || "Konkurencja",
+        })
+      )
+      .join("");
+  } else {
+    // Fallback: single medal zone if sheet has no # SEKCJA blocks
+    body = renderMedalZone(disc?.medals);
+  }
+
+  return `
+    <header class="page-header">
+      <h1>${esc(title)}</h1>
+      <p class="hint">Ewentualne inne konkurencje po zatwierdzeniu przez organizatorów</p>
+    </header>
+    ${body}
+  `;
 }
 
 function cellOrDash(v) {
@@ -697,7 +845,7 @@ function cellStrSafe(v) {
  * Render a discipline tab by id.
  * @param {string} tabId
  * @param {any} data
- * @param {{ expandedAttempts?: Set<string>, expandedGracz?: string|null }} [uiState]
+ * @param {{ expandedAttempts?: Set<string>, expandedGracz?: string|null, expandedMatchKey?: string|null }} [uiState]
  */
 export function renderDiscipline(tabId, data, uiState = {}) {
   if (tabId === "gracze") {
@@ -738,13 +886,7 @@ export function renderDiscipline(tabId, data, uiState = {}) {
   }
 
   if (tabId === "inne") {
-    return `
-      <header class="page-header">
-        <h1>${esc(disc.title || "Inne")}</h1>
-      </header>
-      ${renderGenericSections(disc.sections)}
-      ${renderMedalZone(disc.medals)}
-    `;
+    return renderInne(disc);
   }
 
   // Team sports + badminton
@@ -758,11 +900,14 @@ export function renderDiscipline(tabId, data, uiState = {}) {
   const isTeamSport = tabId === "pilka" || tabId === "siatkowka";
 
   if (isTeamSport) {
-    // Mecze → Drużyny → Ranking
-    parts.push(renderMatches(disc.matches));
-    if (disc.teams?.length) {
-      parts.push(renderTeams(disc.teams));
-    }
+    // Mecze (składy po kliknięciu) → Ranking — składy z arkusza, bez osobnej sekcji Drużyny
+    parts.push(
+      renderMatches(disc.matches, {
+        expandable: true,
+        teams: disc.teams || [],
+        expandedMatchKey: uiState.expandedMatchKey ?? null,
+      })
+    );
   } else {
     // Badminton: gracze → mecze
     if (disc.players?.length) {
@@ -774,12 +919,12 @@ export function renderDiscipline(tabId, data, uiState = {}) {
   if (tabId === "siatkowka") {
     parts.push(
       renderRanking(disc.ranking, {
+        title: "Statystyki indywidualne",
         scoreLabel: "Zwycięstwa / mecze",
         diffLabel: "Różnica setów",
         notesLabel: "Drużyny",
         splitStats: true,
-        hint:
-          "Ranking liczony automatycznie z meczów z wynikiem (format X:Y; w arkuszu wpisuj jako tekst). % zwycięstw ↓, potem różnica setów ↓. Gracz w wielu drużynach — suma meczów wszystkich drużyn; w obu składach jednego meczu — liczy się dwukrotnie.",
+        hint: "Nie mają wpływu na przyznawane medale",
         emptyMessage:
           "Brak graczy w drużynach — uzupełnij składy w arkuszu Siatkówka.",
       })
@@ -787,12 +932,12 @@ export function renderDiscipline(tabId, data, uiState = {}) {
   } else if (tabId === "pilka") {
     parts.push(
       renderRanking(disc.ranking, {
+        title: "Statystyki indywidualne",
         scoreLabel: "Zwycięstwa / mecze",
         diffLabel: "Różnica goli",
         notesLabel: "Drużyny",
         splitStats: true,
-        hint:
-          "Ranking liczony automatycznie z meczów z wynikiem (format X:Y; w arkuszu wpisuj jako tekst). % zwycięstw ↓, potem różnica goli ↓. Gracz w wielu drużynach — suma meczów wszystkich drużyn; w obu składach jednego meczu — liczy się dwukrotnie.",
+        hint: "Nie mają wpływu na przyznawane medale",
         emptyMessage:
           "Brak graczy w drużynach — uzupełnij składy w arkuszu Piłka Nożna.",
       })
