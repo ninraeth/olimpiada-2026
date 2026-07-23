@@ -192,21 +192,28 @@ function bindMatchToggles() {
 }
 
 /**
- * Horizontal swipe-to-dismiss for notification cards.
+ * Swipe-to-dismiss + click-to-open discipline for notification cards.
  */
 function bindNotificationSwipe() {
   if (!els.content) return;
   els.content.querySelectorAll("[data-swipe-notif]").forEach((card) => {
     const id = card.getAttribute("data-notif-id");
     if (!id) return;
+    const tabId = card.getAttribute("data-notif-tab");
 
     let startX = 0;
     let startY = 0;
     let dx = 0;
     let tracking = false;
     let horizontal = null;
+    let didSwipe = false;
 
     const inner = card.querySelector(".notif-card-inner") || card;
+
+    const openTab = () => {
+      if (!tabId || didSwipe) return;
+      switchTab(tabId);
+    };
 
     const onStart = (clientX, clientY) => {
       startX = clientX;
@@ -214,6 +221,7 @@ function bindNotificationSwipe() {
       dx = 0;
       tracking = true;
       horizontal = null;
+      didSwipe = false;
       inner.style.transition = "none";
     };
 
@@ -231,15 +239,20 @@ function bindNotificationSwipe() {
       }
       if (!horizontal) return;
       dx = mx;
+      if (Math.abs(dx) > 12) didSwipe = true;
       inner.style.transform = `translateX(${dx}px)`;
       inner.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / 220));
     };
 
     const onEnd = () => {
-      if (!tracking && horizontal == null) return;
+      if (!tracking && horizontal == null) {
+        // pure click without move tracking edge-case
+        return;
+      }
       tracking = false;
       inner.style.transition = "transform 0.22s ease, opacity 0.22s ease";
       if (Math.abs(dx) > 96) {
+        didSwipe = true;
         const dir = dx > 0 ? 1 : -1;
         inner.style.transform = `translateX(${dir * 120}vw)`;
         inner.style.opacity = "0";
@@ -251,6 +264,9 @@ function bindNotificationSwipe() {
       } else {
         inner.style.transform = "";
         inner.style.opacity = "";
+        if (!didSwipe && Math.abs(dx) < 12) {
+          openTab();
+        }
       }
       dx = 0;
       horizontal = null;
@@ -277,7 +293,23 @@ function bindNotificationSwipe() {
     card.addEventListener("touchend", onEnd);
     card.addEventListener("touchcancel", onEnd);
 
-    // Mouse (desktop)
+    card.addEventListener("click", (e) => {
+      // Keyboard / mouse click without drag
+      if (didSwipe) {
+        e.preventDefault();
+        return;
+      }
+      openTab();
+    });
+
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openTab();
+      }
+    });
+
+    // Mouse drag (desktop)
     card.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return;
       onStart(e.clientX, e.clientY);
@@ -302,9 +334,21 @@ function refreshOptionsModal() {
     state.notifications.length
   );
 
-  const sound = els.optionsBody.querySelector("#opt-sound");
+  const sound = /** @type {HTMLInputElement|null} */ (
+    els.optionsBody.querySelector("#opt-sound")
+  );
+  const medalSelect = /** @type {HTMLSelectElement|null} */ (
+    els.optionsBody.querySelector("#opt-medal-sound")
+  );
+
   sound?.addEventListener("change", () => {
     saveSettings({ soundEnabled: Boolean(sound.checked) });
+    if (medalSelect) medalSelect.disabled = !sound.checked;
+  });
+
+  // Save selection only — no preview playback
+  medalSelect?.addEventListener("change", () => {
+    saveSettings({ medalSoundId: medalSelect.value });
   });
 
   els.optionsBody

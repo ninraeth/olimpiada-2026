@@ -1,23 +1,17 @@
 /**
  * Gold-medal celebration overlay + sound.
+ * Stays until the user dismisses (no auto-hide).
  */
 
-import {
-  GOLD_MEDAL_SOUND_URL,
-  CELEBRATION_DURATION_MS,
-} from "./config.js";
-import { isSoundEnabled } from "./notifications.js";
+import { getSelectedMedalSound, isSoundEnabled } from "./notifications.js";
 
 /** @type {Array<{ recipient: string, discipline: string }>} */
 const queue = [];
 let active = false;
-let hideTimer = 0;
 /** @type {AudioContext|null} */
 let audioCtx = null;
-/** @type {HTMLAudioElement|null} */
-let medalAudio = null;
-let medalAudioReady = false;
-let medalAudioFailed = false;
+/** @type {Map<string, { audio: HTMLAudioElement, ready: boolean, failed: boolean }>} */
+const fileSounds = new Map();
 
 function ensureOverlayRoot() {
   let root = document.getElementById("celebration-root");
@@ -31,33 +25,34 @@ function ensureOverlayRoot() {
 }
 
 /**
- * Try to preload optional mp3; failures fall back to Web Audio.
+ * Preload file-based medal sounds (no autoplay).
  */
 export function preloadCelebrationSound() {
-  if (medalAudio || medalAudioFailed) return;
+  // Lazy: files load on first celebration; optional warm-up of Incredible
+  const incredible = "sounds/incredible.mp3";
+  if (fileSounds.has(incredible)) return;
   try {
-    const a = new Audio(GOLD_MEDAL_SOUND_URL);
+    const a = new Audio(incredible);
     a.preload = "auto";
+    const entry = { audio: a, ready: false, failed: false };
     a.addEventListener(
       "canplaythrough",
       () => {
-        medalAudioReady = true;
+        entry.ready = true;
       },
       { once: true }
     );
     a.addEventListener(
       "error",
       () => {
-        medalAudioFailed = true;
-        medalAudio = null;
-        medalAudioReady = false;
+        entry.failed = true;
+        entry.ready = false;
       },
       { once: true }
     );
-    medalAudio = a;
+    fileSounds.set(incredible, entry);
   } catch {
-    medalAudioFailed = true;
-    medalAudio = null;
+    /* ignore */
   }
 }
 
@@ -70,10 +65,8 @@ function getAudioContext() {
   return audioCtx;
 }
 
-/**
- * Built-in triumphant chime (no external file required).
- */
-function playFallbackChime() {
+/** Built-in triumphant chime ("Domyślny"). */
+function playDefaultChime() {
   const ctx = getAudioContext();
   if (!ctx) return;
   if (ctx.state === "suspended") {
@@ -82,10 +75,10 @@ function playFallbackChime() {
 
   const now = ctx.currentTime;
   const notes = [
-    { f: 523.25, t: 0, d: 0.18 }, // C5
-    { f: 659.25, t: 0.12, d: 0.18 }, // E5
-    { f: 783.99, t: 0.24, d: 0.22 }, // G5
-    { f: 1046.5, t: 0.4, d: 0.55 }, // C6
+    { f: 523.25, t: 0, d: 0.18 },
+    { f: 659.25, t: 0.12, d: 0.18 },
+    { f: 783.99, t: 0.24, d: 0.22 },
+    { f: 1046.5, t: 0.4, d: 0.55 },
   ];
 
   for (const n of notes) {
@@ -102,7 +95,6 @@ function playFallbackChime() {
     osc.stop(now + n.t + n.d + 0.02);
   }
 
-  // Soft sparkle layer
   const sparkle = ctx.createOscillator();
   const sg = ctx.createGain();
   sparkle.type = "sine";
@@ -117,26 +109,72 @@ function playFallbackChime() {
   sparkle.stop(now + 1.15);
 }
 
+/**
+ * Play selected medal sound. File failure → default chime.
+ * Does nothing if sounds disabled. Never used for option previews.
+ */
 function playMedalSound() {
   if (!isSoundEnabled()) return;
 
-  if (medalAudio && medalAudioReady && !medalAudioFailed) {
+  const selected = getSelectedMedalSound();
+  if (!selected?.url) {
+    playDefaultChime();
+    return;
+  }
+
+  let entry = fileSounds.get(selected.url);
+  if (!entry) {
     try {
-      medalAudio.currentTime = 0;
-      const p = medalAudio.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => playFallbackChime());
-      }
-      return;
+      const a = new Audio(selected.url);
+      entry = { audio: a, ready: false, failed: false };
+      a.addEventListener(
+        "canplaythrough",
+        () => {
+          entry.ready = true;
+        },
+        { once: true }
+      );
+      a.addEventListener(
+        "error",
+        () => {
+          entry.failed = true;
+        },
+        { once: true }
+      );
+      fileSounds.set(selected.url, entry);
+      a.load();
     } catch {
-      /* fall through */
+      playDefaultChime();
+      return;
     }
   }
-  playFallbackChime();
+
+  if (entry.failed) {
+    playDefaultChime();
+    return;
+  }
+
+  try {
+    entry.audio.currentTime = 0;
+    const p = entry.audio.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => playDefaultChime());
+    }
+  } catch {
+    playDefaultChime();
+  }
 }
 
 function confettiPieces(count = 48) {
-  const colors = ["#fbbf24", "#f59e0b", "#fde68a", "#38bdf8", "#f472b6", "#34d399", "#fff"];
+  const colors = [
+    "#fbbf24",
+    "#f59e0b",
+    "#fde68a",
+    "#38bdf8",
+    "#f472b6",
+    "#34d399",
+    "#fff",
+  ];
   let html = "";
   for (let i = 0; i < count; i++) {
     const left = Math.random() * 100;
@@ -184,7 +222,7 @@ function showOverlay(item) {
 
   root.innerHTML = `
     <div class="celeb-overlay" role="dialog" aria-modal="true" aria-label="Złoty medal">
-      <div class="celeb-backdrop"></div>
+      <div class="celeb-backdrop" data-celeb-close></div>
       <div class="celeb-fx" aria-hidden="true">
         ${confettiPieces()}
         ${fireworkBursts()}
@@ -207,18 +245,16 @@ function showOverlay(item) {
   `;
 
   const close = () => hideOverlay(true);
-  root.querySelector("[data-celeb-close]")?.addEventListener("click", close);
-  root.querySelector(".celeb-backdrop")?.addEventListener("click", close);
+  root.querySelectorAll("[data-celeb-close]").forEach((el) => {
+    el.addEventListener("click", close);
+  });
 
-  // Enter animation frame
   requestAnimationFrame(() => {
     root.querySelector(".celeb-overlay")?.classList.add("is-visible");
   });
 
   playMedalSound();
-
-  clearTimeout(hideTimer);
-  hideTimer = window.setTimeout(() => hideOverlay(false), CELEBRATION_DURATION_MS);
+  // No auto-dismiss — user closes manually
 }
 
 function escapeHtml(s) {
@@ -233,7 +269,6 @@ function escapeHtml(s) {
  * @param {boolean} immediate
  */
 function hideOverlay(immediate) {
-  clearTimeout(hideTimer);
   const root = document.getElementById("celebration-root");
   const overlay = root?.querySelector(".celeb-overlay");
   if (!overlay) {
@@ -265,7 +300,7 @@ function drainQueue() {
 }
 
 /**
- * Queue a gold celebration (shown one at a time).
+ * Queue a gold celebration (shown one at a time until dismissed).
  * @param {{ recipient?: string, discipline?: string }} event
  */
 export function queueGoldCelebration(event) {

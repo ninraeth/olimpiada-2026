@@ -493,15 +493,19 @@ export function renderNotificationsSection(notifications) {
             minute: "2-digit",
           })
         : "";
+      const bodyContent = n.bodyHtml || esc(n.body);
+      const tabAttr = n.tabId ? ` data-notif-tab="${esc(n.tabId)}"` : "";
+      const clickable = n.tabId ? " is-clickable" : "";
       return `
-        <article class="notif-card notif-card--${esc(n.type || "info")}"
+        <article class="notif-card notif-card--${esc(n.type || "info")}${clickable}"
           data-notif-id="${esc(n.id)}"
-          data-swipe-notif>
+          data-swipe-notif${tabAttr}
+          ${n.tabId ? 'role="link" tabindex="0"' : ""}>
           <div class="notif-card-inner">
             <span class="notif-icon" aria-hidden="true">${notificationIcon(n.type)}</span>
             <div class="notif-body">
               <p class="notif-title">${esc(n.title)}</p>
-              <p class="notif-text">${esc(n.body)}</p>
+              <p class="notif-text">${bodyContent}</p>
               ${time ? `<p class="notif-time">${esc(time)}</p>` : ""}
             </div>
           </div>
@@ -512,18 +516,31 @@ export function renderNotificationsSection(notifications) {
   return `
     <section class="block notif-section" aria-label="Powiadomienia">
       <h2 class="section-title">Powiadomienia <span class="section-count">${list.length}</span></h2>
-      <p class="hint">Przesuń kartę w bok, aby usunąć</p>
+      <p class="hint">Dotknij, aby otworzyć dyscyplinę · przesuń w bok, aby usunąć</p>
       <div class="notif-list">${cards}</div>
     </section>`;
 }
 
 /**
  * Options modal body (sounds + clear notifications).
- * @param {{ soundEnabled?: boolean }} settings
+ * @param {{ soundEnabled?: boolean, medalSoundId?: string }} settings
  * @param {number} [notifCount]
  */
 export function renderOptionsModalBody(settings, notifCount = 0) {
   const soundOn = settings?.soundEnabled !== false;
+  const medalSoundId = settings?.medalSoundId || "default";
+  const soundOptions = [
+    { id: "default", label: "Domyślny" },
+    { id: "incredible", label: "Incredible" },
+  ]
+    .map(
+      (o) =>
+        `<option value="${esc(o.id)}" ${
+          o.id === medalSoundId ? "selected" : ""
+        }>${esc(o.label)}</option>`
+    )
+    .join("");
+
   return `
     <h2 id="options-title" class="options-title">Opcje</h2>
     <label class="options-toggle">
@@ -531,7 +548,12 @@ export function renderOptionsModalBody(settings, notifCount = 0) {
       <input type="checkbox" id="opt-sound" ${soundOn ? "checked" : ""} />
       <span class="options-switch" aria-hidden="true"></span>
     </label>
-    <p class="options-hint muted">Dotyczy animacji zdobycia złotego medalu.</p>
+    <label class="options-field">
+      <span class="options-field-label">Dźwięk zdobycia złotego medalu</span>
+      <select id="opt-medal-sound" class="options-select"${soundOn ? "" : " disabled"}>
+        ${soundOptions}
+      </select>
+    </label>
     <button type="button" class="btn btn-danger-outline" id="opt-clear-notifs" ${
       notifCount ? "" : "disabled"
     }>

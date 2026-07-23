@@ -1,2 +1,3 @@
-# Optional: place gold-medal.mp3 here (see GOLD_MEDAL_SOUND_URL in js/config.js).
-# If missing, the app plays a built-in Web Audio chime.
+# Optional medal sounds (see MEDAL_SOUNDS in js/config.js).
+# incredible.mp3 — selectable as "Incredible" in Options.
+# Default selection uses a built-in Web Audio chime.

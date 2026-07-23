@@ -1861,24 +1861,44 @@ async function fetchSheetRows(sheetName) {
 }
 
 /**
+/**
+ * Parse gender cell: 0 = woman, 1 = man. Other/empty → null.
+ * @param {unknown} raw
+ * @returns {0|1|null}
+ */
+export function parseGender(raw) {
+  const s = cellStr(raw);
+  if (s === "0") return 0;
+  if (s === "1") return 1;
+  // Sheets sometimes export numbers without quotes
+  if (raw === 0 || raw === 0.0) return 0;
+  if (raw === 1 || raw === 1.0) return 1;
+  const n = Number(s);
+  if (n === 0) return 0;
+  if (n === 1) return 1;
+  return null;
+}
+
+/**
  * Parse Gracze sheet — keep sheet order (alphabetically maintained there).
+ * Column "gender": 0 = woman, 1 = man (used for notification wording).
  * @param {string[][]} rows
- * @returns {{ id: string, name: string }[]}
+ * @returns {{ id: string, name: string, gender: 0|1|null }[]}
  */
 export function parsePlayersDirectory(rows) {
   const cleaned = stripLeadingEmptyCols(rows);
   const sections = splitSections(cleaned);
-  /** @type {{ id: string, name: string }[]} */
+  /** @type {{ id: string, name: string, gender: 0|1|null }[]} */
   const list = [];
   const seen = new Set();
 
-  const pushName = (id, name) => {
+  const pushName = (id, name, gender = null) => {
     const n = cellStr(name);
     if (!n || /^imie/i.test(n) || /^gracz$/i.test(n) || /^id_/i.test(n)) return;
     const key = normName(n);
     if (!key || seen.has(key)) return;
     seen.add(key);
-    list.push({ id: cellStr(id), name: n });
+    list.push({ id: cellStr(id), name: n, gender });
   };
 
   for (const sec of sections) {
@@ -1895,12 +1915,15 @@ export function parsePlayersDirectory(rows) {
         (h) => h.includes("id_gracza"),
         (h) => h === "id",
       ]);
+      const genderIdx = findCol(sec.headers, [(h) => h === "gender"]);
       for (const row of sec.rows) {
         if (isCommentRow(row) || isEmptyRow(row)) continue;
         const name =
           nameIdx >= 0 ? cellStr(row[nameIdx]) : cellStr(row[1]) || cellStr(row[0]);
         const id = idIdx >= 0 ? cellStr(row[idIdx]) : cellStr(row[0]);
-        pushName(id, name);
+        const gender =
+          genderIdx >= 0 ? parseGender(row[genderIdx]) : null;
+        pushName(id, name, gender);
       }
     }
   }
@@ -1916,6 +1939,7 @@ export function parsePlayersDirectory(rows) {
           (h) => h.includes("gracz") && !h.includes("id"),
         ]);
         const idIdx = findCol(headers, [(h) => h.includes("id")]);
+        const genderIdx = findCol(headers, [(h) => h === "gender"]);
         for (let j = i + 1; j < cleaned.length; j++) {
           if (isEmptyRow(cleaned[j]) || isCommentRow(cleaned[j])) continue;
           if (detectSectionMarker(cellStr(cleaned[j][0]))) break;
@@ -1925,7 +1949,9 @@ export function parsePlayersDirectory(rows) {
               : cellStr(cleaned[j][1]) || cellStr(cleaned[j][0]);
           const id =
             idIdx >= 0 ? cellStr(cleaned[j][idIdx]) : cellStr(cleaned[j][0]);
-          pushName(id, name);
+          const gender =
+            genderIdx >= 0 ? parseGender(cleaned[j][genderIdx]) : null;
+          pushName(id, name, gender);
         }
         break;
       }
@@ -2293,7 +2319,7 @@ export async function loadTournamentData() {
       const key = normName(name);
       if (!key || seen.has(key)) return;
       seen.add(key);
-      playersDirectory.push({ id: "", name });
+      playersDirectory.push({ id: "", name, gender: null });
     };
     for (const disc of Object.values(disciplines)) {
       for (const t of disc.teams || []) {

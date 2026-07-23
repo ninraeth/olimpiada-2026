@@ -50,13 +50,16 @@ export const NOTIFICATIONS_KEY = "olimpiada2026_notifications_v1";
 export const SETTINGS_KEY = "olimpiada2026_settings_v1";
 
 /**
- * Preferred sound for gold-medal celebration.
- * If the file is missing / fails to load, a built-in Web Audio chime is used.
+ * Gold-medal celebration sounds available in Options.
+ * `url: null` = built-in Web Audio chime ("Domyślny").
  */
-export const GOLD_MEDAL_SOUND_URL = "sounds/gold-medal.mp3";
+export const MEDAL_SOUNDS = [
+  { id: "default", label: "Domyślny", url: null },
+  { id: "incredible", label: "Incredible", url: "sounds/incredible.mp3" },
+];
 
-/** How long the gold celebration overlay stays visible (ms) */
-export const CELEBRATION_DURATION_MS = 6500;
+/** Default selection when nothing stored yet */
+export const DEFAULT_MEDAL_SOUND_ID = "default";
 
 /** App metadata */
 export const APP_TITLE = "Olimpiada Bieździadów 2026";
