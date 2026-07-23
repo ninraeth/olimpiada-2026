@@ -10,7 +10,21 @@ import {
   renderDiscipline,
   renderLoading,
   renderError,
+  renderOptionsModalBody,
 } from "./render.js";
+import {
+  processDataForEvents,
+  loadNotifications,
+  dismissNotification,
+  clearAllNotifications,
+  addNotificationsFromEvents,
+  loadSettings,
+  saveSettings,
+} from "./notifications.js";
+import {
+  queueGoldCelebration,
+  preloadCelebrationSound,
+} from "./celebration.js";
 
 const state = {
   activeTab: "info",
@@ -24,6 +38,9 @@ const state = {
   expandedGracz: null,
   /** @type {string|null} expanded team-sport match key (roster panel) */
   expandedMatchKey: null,
+  /** @type {import('./notifications.js').AppNotification[]} */
+  notifications: [],
+  optionsOpen: false,
 };
 
 const els = {
@@ -31,6 +48,9 @@ const els = {
   content: document.getElementById("content"),
   refreshBtn: document.getElementById("btn-refresh"),
   status: document.getElementById("status-line"),
+  optionsBtn: document.getElementById("btn-options"),
+  optionsModal: document.getElementById("options-modal"),
+  optionsBody: document.getElementById("options-body"),
 };
 
 function setStatus(text, kind = "") {
@@ -81,7 +101,9 @@ function render() {
   }
 
   if (state.activeTab === "info") {
-    els.content.innerHTML = renderInfo(state.data);
+    els.content.innerHTML = renderInfo(state.data, {
+      notifications: state.notifications,
+    });
   } else {
     els.content.innerHTML = renderDiscipline(state.activeTab, state.data, {
       expandedAttempts: state.expandedAttempts,
@@ -93,10 +115,15 @@ function render() {
   bindAttemptToggles();
   bindGraczToggles();
   bindMatchToggles();
+  bindNotificationSwipe();
 
   if (els.refreshBtn) {
     els.refreshBtn.disabled = state.loading;
     els.refreshBtn.classList.toggle("is-spinning", state.loading);
+  }
+
+  if (state.optionsOpen) {
+    refreshOptionsModal();
   }
 }
 
@@ -165,6 +192,196 @@ function bindMatchToggles() {
 }
 
 /**
+ * Horizontal swipe-to-dismiss for notification cards.
+ */
+function bindNotificationSwipe() {
+  if (!els.content) return;
+  els.content.querySelectorAll("[data-swipe-notif]").forEach((card) => {
+    const id = card.getAttribute("data-notif-id");
+    if (!id) return;
+
+    let startX = 0;
+    let startY = 0;
+    let dx = 0;
+    let tracking = false;
+    let horizontal = null;
+
+    const inner = card.querySelector(".notif-card-inner") || card;
+
+    const onStart = (clientX, clientY) => {
+      startX = clientX;
+      startY = clientY;
+      dx = 0;
+      tracking = true;
+      horizontal = null;
+      inner.style.transition = "none";
+    };
+
+    const onMove = (clientX, clientY) => {
+      if (!tracking) return;
+      const mx = clientX - startX;
+      const my = clientY - startY;
+      if (horizontal == null) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        horizontal = Math.abs(mx) > Math.abs(my);
+        if (!horizontal) {
+          tracking = false;
+          return;
+        }
+      }
+      if (!horizontal) return;
+      dx = mx;
+      inner.style.transform = `translateX(${dx}px)`;
+      inner.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / 220));
+    };
+
+    const onEnd = () => {
+      if (!tracking && horizontal == null) return;
+      tracking = false;
+      inner.style.transition = "transform 0.22s ease, opacity 0.22s ease";
+      if (Math.abs(dx) > 96) {
+        const dir = dx > 0 ? 1 : -1;
+        inner.style.transform = `translateX(${dir * 120}vw)`;
+        inner.style.opacity = "0";
+        window.setTimeout(() => {
+          state.notifications = dismissNotification(id);
+          if (state.activeTab === "info") render();
+          else if (state.optionsOpen) refreshOptionsModal();
+        }, 200);
+      } else {
+        inner.style.transform = "";
+        inner.style.opacity = "";
+      }
+      dx = 0;
+      horizontal = null;
+    };
+
+    card.addEventListener(
+      "touchstart",
+      (e) => {
+        const t = e.changedTouches[0];
+        if (t) onStart(t.clientX, t.clientY);
+      },
+      { passive: true }
+    );
+    card.addEventListener(
+      "touchmove",
+      (e) => {
+        const t = e.changedTouches[0];
+        if (!t) return;
+        if (horizontal) e.preventDefault();
+        onMove(t.clientX, t.clientY);
+      },
+      { passive: false }
+    );
+    card.addEventListener("touchend", onEnd);
+    card.addEventListener("touchcancel", onEnd);
+
+    // Mouse (desktop)
+    card.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      onStart(e.clientX, e.clientY);
+      const move = (ev) => onMove(ev.clientX, ev.clientY);
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+        onEnd();
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
+    });
+  });
+}
+
+// ─── Options modal ─────────────────────────────────────────────
+
+function refreshOptionsModal() {
+  if (!els.optionsBody) return;
+  els.optionsBody.innerHTML = renderOptionsModalBody(
+    loadSettings(),
+    state.notifications.length
+  );
+
+  const sound = els.optionsBody.querySelector("#opt-sound");
+  sound?.addEventListener("change", () => {
+    saveSettings({ soundEnabled: Boolean(sound.checked) });
+  });
+
+  els.optionsBody
+    .querySelector("#opt-clear-notifs")
+    ?.addEventListener("click", () => {
+      state.notifications = clearAllNotifications();
+      refreshOptionsModal();
+      if (state.activeTab === "info") render();
+    });
+}
+
+function openOptions() {
+  state.optionsOpen = true;
+  if (!els.optionsModal) return;
+  refreshOptionsModal();
+  els.optionsModal.hidden = false;
+  els.optionsModal.classList.add("is-open");
+  document.body.classList.add("modal-open");
+  els.optionsBtn?.setAttribute("aria-expanded", "true");
+  // Focus first control
+  window.setTimeout(() => {
+    els.optionsBody?.querySelector("#opt-sound")?.focus();
+  }, 50);
+}
+
+function closeOptions() {
+  state.optionsOpen = false;
+  if (!els.optionsModal) return;
+  els.optionsModal.classList.remove("is-open");
+  els.optionsModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  els.optionsBtn?.setAttribute("aria-expanded", "false");
+}
+
+function bindOptionsUi() {
+  els.optionsBtn?.addEventListener("click", () => {
+    if (state.optionsOpen) closeOptions();
+    else openOptions();
+  });
+
+  els.optionsModal?.addEventListener("click", (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (t?.dataset?.optionsClose != null) {
+      closeOptions();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.optionsOpen) {
+      closeOptions();
+    }
+  });
+}
+
+// ─── Events from data refresh ──────────────────────────────────
+
+/**
+ * Detect changes vs previous snapshot, store cards, queue celebrations.
+ * @param {any} data
+ */
+function handleDataEvents(data) {
+  const events = processDataForEvents(data);
+  if (!events.length) return;
+
+  state.notifications = addNotificationsFromEvents(events);
+
+  for (const ev of events) {
+    if (ev.celebrate && ev.type === "gold") {
+      queueGoldCelebration({
+        recipient: ev.recipient,
+        discipline: ev.discipline,
+      });
+    }
+  }
+}
+
+/**
  * @param {boolean} forceNetwork
  */
 async function refresh(forceNetwork = false) {
@@ -177,6 +394,7 @@ async function refresh(forceNetwork = false) {
     const data = await loadTournamentData();
     state.data = data;
     state.loading = false;
+    handleDataEvents(data);
     const t = new Date(data.fetchedAt).toLocaleTimeString("pl-PL", {
       hour: "2-digit",
       minute: "2-digit",
@@ -222,7 +440,10 @@ function init() {
   document.title = APP_TITLE;
   initFromHash();
 
-  // Show cache immediately if available
+  state.notifications = loadNotifications();
+  preloadCelebrationSound();
+
+  // Show cache immediately if available (no event detection — wait for network)
   const cached = loadCachedData();
   if (cached) {
     state.data = cached;
@@ -231,6 +452,7 @@ function init() {
 
   updateNav();
   render();
+  bindOptionsUi();
 
   els.refreshBtn?.addEventListener("click", () => refresh(true));
 

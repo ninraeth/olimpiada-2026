@@ -465,9 +465,87 @@ function renderGenericSections(sections) {
 }
 
 /**
- * Render Info tab.
+ * Notification type → icon.
+ * @param {string} type
  */
-export function renderInfo(data) {
+function notificationIcon(type) {
+  if (type === "gold") return "🥇";
+  if (type === "leader") return "👑";
+  if (type === "match_result") return "📣";
+  return "🔔";
+}
+
+/**
+ * Cards list for Info tab (newest first; swipe-to-dismiss bound in app.js).
+ * @param {import('./notifications.js').AppNotification[]|null|undefined} notifications
+ */
+export function renderNotificationsSection(notifications) {
+  const list = notifications || [];
+  if (!list.length) return "";
+
+  const cards = list
+    .map((n) => {
+      const time = n.createdAt
+        ? new Date(n.createdAt).toLocaleString("pl-PL", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "";
+      return `
+        <article class="notif-card notif-card--${esc(n.type || "info")}"
+          data-notif-id="${esc(n.id)}"
+          data-swipe-notif>
+          <div class="notif-card-inner">
+            <span class="notif-icon" aria-hidden="true">${notificationIcon(n.type)}</span>
+            <div class="notif-body">
+              <p class="notif-title">${esc(n.title)}</p>
+              <p class="notif-text">${esc(n.body)}</p>
+              ${time ? `<p class="notif-time">${esc(time)}</p>` : ""}
+            </div>
+          </div>
+        </article>`;
+    })
+    .join("");
+
+  return `
+    <section class="block notif-section" aria-label="Powiadomienia">
+      <h2 class="section-title">Powiadomienia <span class="section-count">${list.length}</span></h2>
+      <p class="hint">Przesuń kartę w bok, aby usunąć</p>
+      <div class="notif-list">${cards}</div>
+    </section>`;
+}
+
+/**
+ * Options modal body (sounds + clear notifications).
+ * @param {{ soundEnabled?: boolean }} settings
+ * @param {number} [notifCount]
+ */
+export function renderOptionsModalBody(settings, notifCount = 0) {
+  const soundOn = settings?.soundEnabled !== false;
+  return `
+    <h2 id="options-title" class="options-title">Opcje</h2>
+    <label class="options-toggle">
+      <span class="options-toggle-label">Dźwięki w aplikacji</span>
+      <input type="checkbox" id="opt-sound" ${soundOn ? "checked" : ""} />
+      <span class="options-switch" aria-hidden="true"></span>
+    </label>
+    <p class="options-hint muted">Dotyczy animacji zdobycia złotego medalu.</p>
+    <button type="button" class="btn btn-danger-outline" id="opt-clear-notifs" ${
+      notifCount ? "" : "disabled"
+    }>
+      Usuń wszystkie powiadomienia${notifCount ? ` (${notifCount})` : ""}
+    </button>
+  `;
+}
+
+/**
+ * Render Info tab.
+ * @param {any} data
+ * @param {{ notifications?: import('./notifications.js').AppNotification[] }} [opts]
+ */
+export function renderInfo(data, opts = {}) {
   const info = data?.info || {};
   const title = info.title || APP_TITLE;
   const paragraphs = info.paragraphs || [];
@@ -506,6 +584,8 @@ export function renderInfo(data) {
       ? `<p class="banner banner-error">Częściowe błędy pobierania: ${esc(data.errors.join("; "))}</p>`
       : "";
 
+  const notifHtml = renderNotificationsSection(opts.notifications || []);
+
   return `
     <div class="hero">
       <p class="hero-kicker">Turniej sportowy</p>
@@ -514,6 +594,7 @@ export function renderInfo(data) {
     </div>
     ${cacheNote}
     ${errNote}
+    ${notifHtml}
     ${metaHtml}
     <section class="block info-content">
       <ul class="info-list">${body}</ul>

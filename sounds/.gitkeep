@@ -1,0 +1,2 @@
+# Optional: place gold-medal.mp3 here (see GOLD_MEDAL_SOUND_URL in js/config.js).
+# If missing, the app plays a built-in Web Audio chime.

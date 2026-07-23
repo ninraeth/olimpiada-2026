@@ -40,8 +40,36 @@ export const REFRESH_INTERVAL_MS = 5 * 60_000;
 /** localStorage key for last successful data snapshot */
 export const CACHE_KEY = "olimpiada2026_data_v2";
 
+/** localStorage: compact snapshot for change-detection (notifications) */
+export const EVENTS_SNAPSHOT_KEY = "olimpiada2026_events_snap_v1";
+
+/** localStorage: notification cards shown in Info */
+export const NOTIFICATIONS_KEY = "olimpiada2026_notifications_v1";
+
+/** localStorage: user preferences (sounds, …) */
+export const SETTINGS_KEY = "olimpiada2026_settings_v1";
+
+/**
+ * Preferred sound for gold-medal celebration.
+ * If the file is missing / fails to load, a built-in Web Audio chime is used.
+ */
+export const GOLD_MEDAL_SOUND_URL = "sounds/gold-medal.mp3";
+
+/** How long the gold celebration overlay stays visible (ms) */
+export const CELEBRATION_DURATION_MS = 6500;
+
 /** App metadata */
 export const APP_TITLE = "Olimpiada Bieździadów 2026";
+
+/** Display labels for discipline ids (tabs / notifications) */
+export const DISCIPLINE_LABELS = {
+  pilka: "Piłka Nożna",
+  pilka_ind: "Piłka ind.",
+  siatkowka: "Siatkówka",
+  koszykowka: "Koszykówka",
+  badminton: "Badminton",
+  inne: "Inne",
+};
 
 /**
  * Official CSV export by gid — preserves text values (e.g. letter "s").
