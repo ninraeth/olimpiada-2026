@@ -206,14 +206,7 @@ function renderMatches(matches, opts = {}) {
               <span class="match-vs">${hasScore ? esc(m.score) : "vs"}</span>
               <span class="side side-b">${esc(m.side2)}</span>
             </div>
-            <div class="match-meta">
-              ${
-                hasScore
-                  ? `<span class="badge badge-score">Wynik</span>`
-                  : `<span class="badge badge-pending">Oczekuje</span>`
-              }
-              ${chevron}
-            </div>
+            ${chevron ? `<div class="match-meta">${chevron}</div>` : ""}
           </div>
           ${roster}
         </article>`;
@@ -338,7 +331,7 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
       const expanded = expandedNames.has(p.name);
       const scoreDisplay = p.score || "—";
 
-      let attemptBlock = "";
+      let attemptRow = "";
       if (expanded && p.attemptRows?.length) {
         const head =
           shotKeys.map((k) => `<th>${esc(k)}</th>`).join("") +
@@ -352,8 +345,8 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
                 const raw = ar.shots[k] || "";
                 if (/^s\.?$/i.test(String(raw).trim().replace(/\s+/g, ""))) {
                   const resolved = resolvedRows?.[ri]?.shots?.[k] || "";
-                  const label = resolved ? `S (${resolved})` : "S";
-                  return `<td class="shot-s" title="S = 50% najgorszy ${esc(k)} + 50% średnia ${esc(k)}">${esc(label)}</td>`;
+                  const label = resolved || "—";
+                  return `<td class="shot-s" title="Wartość wyliczona: 50% najgorszy ${esc(k)} + 50% średnia ${esc(k)}">${esc(label)}</td>`;
                 }
                 return `<td>${esc(raw)}</td>`;
               })
@@ -366,13 +359,17 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
             return `<tr>${cells}<td class="col-attempt-avg" title="Średnia próby">${esc(meanStr)}</td></tr>`;
           })
           .join("");
-        attemptBlock = `
-          <div class="attempt-panel" data-player-attempts="${esc(p.name)}">
-            <table class="attempt-table">
-              <thead><tr>${head}</tr></thead>
-              <tbody>${body}</tbody>
-            </table>
-          </div>`;
+        attemptRow = `
+          <tr class="bball-attempts-row">
+            <td colspan="3">
+              <div class="attempt-panel" data-player-attempts="${esc(p.name)}">
+                <table class="attempt-table">
+                  <thead><tr>${head}</tr></thead>
+                  <tbody>${body}</tbody>
+                </table>
+              </div>
+            </td>
+          </tr>`;
       } else if (expanded && hasAttempts && !p.attemptRows?.length) {
         const items = Object.entries(p.attempts || {})
           .map(
@@ -380,7 +377,12 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
               `<span class="attempt-item"><strong>${esc(k)}</strong>: ${esc(v)}</span>`
           )
           .join("");
-        attemptBlock = `<div class="attempt-panel attempt-grid">${items}</div>`;
+        attemptRow = `
+          <tr class="bball-attempts-row">
+            <td colspan="3">
+              <div class="attempt-panel attempt-grid">${items}</div>
+            </td>
+          </tr>`;
       }
 
       const nameClass = hasAttempts
@@ -398,10 +400,10 @@ function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
           <td class="col-place"><span class="place-pill">${i + 1}</span></td>
           <td>
             <div class="${nameClass}"${aria}>${chevron}<span>${esc(p.name)}</span></div>
-            ${attemptBlock}
           </td>
           <td class="col-stat score-cell">${esc(scoreDisplay)}</td>
-        </tr>`;
+        </tr>
+        ${attemptRow}`;
     })
     .join("");
 
@@ -909,10 +911,7 @@ export function renderDiscipline(tabId, data, uiState = {}) {
       })
     );
   } else {
-    // Badminton: gracze → mecze
-    if (disc.players?.length) {
-      parts.push(renderPlayersList(disc.players, "Gracze"));
-    }
+    // Badminton: tylko mecze (bez osobnej listy graczy)
     parts.push(renderMatches(disc.matches));
   }
 
