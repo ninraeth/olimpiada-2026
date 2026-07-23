@@ -3,6 +3,7 @@
  */
 
 import { TABS, APP_TITLE } from "./config.js";
+import { buildPlayerProfile, sortPlayersByMedals } from "./data.js";
 
 function esc(s) {
   return String(s ?? "")
@@ -192,43 +193,51 @@ function renderRanking(ranking, opts = "Wynik") {
 }
 
 /**
+ * Individual attempt ranking (Koszykówka / Piłka ind.).
  * @param {any} disc
  * @param {Set<string>} [expandedNames]
+ * @param {{ shotKeys?: string[], emptyMessage?: string, categoriesLabel?: string }} [opts]
  */
-function renderBasketball(disc, expandedNames = new Set()) {
+function renderSkillRanking(disc, expandedNames = new Set(), opts = {}) {
   const players = disc.players || [];
+  const shotKeys =
+    opts.shotKeys ||
+    disc.skillShotKeys ||
+    players[0]?.shotKeys ||
+    ["1P", "2P", "3P", "UK1", "UK2"];
+  const emptyMessage =
+    opts.emptyMessage || "Brak graczy w arkuszu.";
+  const categoriesLabel = opts.categoriesLabel || shotKeys.join(" / ");
+
   if (!players.length) {
-    return emptyBlock("Brak graczy w arkuszu Koszykówka.");
+    return emptyBlock(emptyMessage);
   }
 
   const sorted = [...players].sort(
     (a, b) => (b.scoreNum ?? -Infinity) - (a.scoreNum ?? -Infinity)
   );
 
-  const shotKeys = ["1P", "2P", "3P", "UK1", "UK2"];
-
   const rows = sorted
     .map((p, i) => {
-      const hasAttempts = (p.attemptRows && p.attemptRows.length > 0) ||
+      const hasAttempts =
+        (p.attemptRows && p.attemptRows.length > 0) ||
         Object.keys(p.attempts || {}).length > 0;
       const expanded = expandedNames.has(p.name);
       const scoreDisplay = p.score || "—";
 
       let attemptBlock = "";
       if (expanded && p.attemptRows?.length) {
-        const head = shotKeys.map((k) => `<th>${k}</th>`).join("");
+        const head = shotKeys.map((k) => `<th>${esc(k)}</th>`).join("");
         const resolvedRows = p.resolvedAttemptRows || null;
         const body = p.attemptRows
           .map((ar, ri) => {
             const cells = shotKeys
               .map((k) => {
                 const raw = ar.shots[k] || "";
-                if (/^s$/i.test(String(raw).trim())) {
+                if (/^s\.?$/i.test(String(raw).trim().replace(/\s+/g, ""))) {
                   const resolved = resolvedRows?.[ri]?.shots?.[k] || "";
-                  const label = resolved
-                    ? `S (${resolved})`
-                    : "S";
-                  return `<td class="shot-s" title="S = 50% najgorszy ${k} + 50% średnia ${k}">${esc(label)}</td>`;
+                  const label = resolved ? `S (${resolved})` : "S";
+                  return `<td class="shot-s" title="S = 50% najgorszy ${esc(k)} + 50% średnia ${esc(k)}">${esc(label)}</td>`;
                 }
                 return `<td>${esc(raw)}</td>`;
               })
@@ -244,7 +253,6 @@ function renderBasketball(disc, expandedNames = new Set()) {
             </table>
           </div>`;
       } else if (expanded && hasAttempts && !p.attemptRows?.length) {
-        // Fallback flat attempts if structure missing
         const items = Object.entries(p.attempts || {})
           .map(
             ([k, v]) =>
@@ -279,7 +287,7 @@ function renderBasketball(disc, expandedNames = new Set()) {
   return `
     <section class="block">
       ${sectionTitle("Gracze / Ranking", sorted.length)}
-      <p class="hint">Wynik = (średnia najlepszej próby + średnia pozostałych prób) / 2, nie zwykła średnia arytmetyczna. 1 próba → średnia z 1P…UK2. „S” w komórce = 50% najgorszy wynik tego typu rzutu (wszyscy gracze/próby) + 50% średnia tego typu. Sortowanie malejąco. Kliknij gracza → próby.</p>
+      <p class="hint">Wynik = (średnia najlepszej próby + średnia pozostałych prób) / 2. 1 próba → średnia z ${esc(categoriesLabel)}. „S” w komórce = 50% najgorszy wynik tego typu (wszyscy gracze/próby) + 50% średnia tego typu. Sortowanie malejąco. Kliknij gracza → próby.</p>
       <div class="table-wrap">
         <table class="data-table data-table--basketball">
           <thead>
@@ -392,12 +400,310 @@ export function renderInfo(data) {
 }
 
 /**
+ * Render player match card for Gracze profile (team or 1v1).
+ * @param {any} m
+ */
+function renderPlayerMatchCard(m) {
+  const outcome = m.outcome || "pending";
+  const outcomeClass =
+    outcome === "win"
+      ? "pmatch--win"
+      : outcome === "loss"
+        ? "pmatch--loss"
+        : outcome === "both"
+          ? "pmatch--both"
+          : outcome === "draw"
+            ? "pmatch--draw"
+            : "pmatch--pending";
+
+  const outcomeLabel =
+    outcome === "win"
+      ? "Wygrana"
+      : outcome === "loss"
+        ? "Porażka"
+        : outcome === "both"
+          ? "Obie drużyny"
+          : outcome === "draw"
+            ? "Remis"
+            : "Zaplanowany";
+
+  const side = (name, mine) =>
+    `<span class="pmatch-side ${mine ? "pmatch-side--mine" : ""}">${esc(name)}</span>`;
+
+  const scoreOrVs = m.score
+    ? `<span class="pmatch-score">${esc(m.score)}</span>`
+    : `<span class="pmatch-score pmatch-score--vs">vs</span>`;
+
+  return `
+    <article class="pmatch ${outcomeClass}">
+      <div class="pmatch-phase">${esc(m.phase || "—")}</div>
+      <div class="pmatch-body">
+        ${side(m.side1, m.mine1)}
+        ${scoreOrVs}
+        ${side(m.side2, m.mine2)}
+      </div>
+      <span class="pmatch-badge">${outcomeLabel}</span>
+    </article>`;
+}
+
+/**
+ * @param {string} title
+ * @param {{ teams?: string[], matches: any[] }} block
+ */
+function renderPlayerMatchDiscipline(title, block) {
+  const teams =
+    block.teams?.length
+      ? `<p class="profile-teams muted">Drużyny: ${esc(block.teams.join(", "))}</p>`
+      : "";
+  if (!block.matches?.length) {
+    return `
+      <section class="profile-disc">
+        <h3 class="profile-disc-title">${esc(title)}</h3>
+        ${teams}
+        <p class="muted profile-empty">Brak meczów z udziałem gracza.</p>
+      </section>`;
+  }
+  return `
+    <section class="profile-disc">
+      <h3 class="profile-disc-title">${esc(title)}</h3>
+      ${teams}
+      <div class="pmatch-list">
+        ${block.matches.map(renderPlayerMatchCard).join("")}
+      </div>
+    </section>`;
+}
+
+/**
+ * @param {string} title
+ * @param {{ place: string, score: string }|null} standing
+ */
+function renderPlayerSkillDiscipline(title, standing) {
+  if (!standing) {
+    return `
+      <section class="profile-disc">
+        <h3 class="profile-disc-title">${esc(title)}</h3>
+        <p class="muted profile-empty">Brak wyniku w rankingu.</p>
+      </section>`;
+  }
+  return `
+    <section class="profile-disc">
+      <h3 class="profile-disc-title">${esc(title)}</h3>
+      <div class="profile-skill-row">
+        <span class="place-pill">${esc(standing.place)}</span>
+        <span class="profile-skill-score">Wynik: <strong>${esc(standing.score)}</strong></span>
+      </div>
+    </section>`;
+}
+
+const MEDAL_EMOJI = {
+  złoty: "🥇",
+  srebrny: "🥈",
+  brązowy: "🥉",
+};
+
+/**
+ * Compact medal icons for the player row (max ~7 medals).
+ * Uses count badges (e.g. 2×🥇) when there are many of the same type.
+ * @param {{ medal: string }[]} awards
+ */
+function renderMedalIcons(awards) {
+  if (!awards?.length) return "";
+  const counts = { złoty: 0, srebrny: 0, brązowy: 0 };
+  for (const a of awards) {
+    if (counts[a.medal] != null) counts[a.medal] += 1;
+  }
+  const parts = [];
+  for (const key of ["złoty", "srebrny", "brązowy"]) {
+    const n = counts[key];
+    if (!n) continue;
+    const emoji = MEDAL_EMOJI[key];
+    if (n === 1) {
+      parts.push(
+        `<span class="medal-icon medal-icon--${key}" title="${esc(key)}">${emoji}</span>`
+      );
+    } else {
+      parts.push(
+        `<span class="medal-icon medal-icon--${key} medal-icon--multi" title="${n}× ${esc(key)}"><span class="medal-count">${n}×</span>${emoji}</span>`
+      );
+    }
+  }
+  if (!parts.length) return "";
+  return `<span class="medal-icons" aria-label="Medale">${parts.join("")}</span>`;
+}
+
+/**
+ * Expanded list: what each medal is for.
+ * @param {{ medal: string, discipline: string, recipient: string, via: string|null }[]} awards
+ */
+function renderPlayerMedalsDetail(awards) {
+  if (!awards?.length) {
+    return `
+      <section class="profile-disc">
+        <h3 class="profile-disc-title">Medale</h3>
+        <p class="muted profile-empty">Brak medali.</p>
+      </section>`;
+  }
+  const items = awards
+    .map((a) => {
+      const emoji = MEDAL_EMOJI[a.medal] || "🏅";
+      const label =
+        a.medal === "złoty"
+          ? "Złoty"
+          : a.medal === "srebrny"
+            ? "Srebrny"
+            : a.medal === "brązowy"
+              ? "Brązowy"
+              : a.medal;
+      const via =
+        a.via
+          ? ` <span class="muted">(z drużyną ${esc(a.via)})</span>`
+          : a.recipient && a.recipient !== a.discipline
+            ? ` <span class="muted">— ${esc(a.recipient)}</span>`
+            : "";
+      return `
+        <li class="medal-award medal-award--${esc(a.medal)}">
+          <span class="medal-award-emoji">${emoji}</span>
+          <span class="medal-award-text">
+            <strong>${esc(label)}</strong> — ${esc(a.discipline)}${via}
+          </span>
+        </li>`;
+    })
+    .join("");
+  return `
+    <section class="profile-disc">
+      <h3 class="profile-disc-title">Medale</h3>
+      <ul class="medal-award-list">${items}</ul>
+    </section>`;
+}
+
+/**
+ * Gracze directory — sorted by medals (gold → silver → bronze), then A–Z.
+ * Icons next to name; expand one profile at a time.
+ * @param {any} data
+ * @param {string|null} expandedName
+ */
+export function renderGracze(data, expandedName = null) {
+  const directory = data?.playersDirectory || [];
+  if (!directory.length) {
+    return `
+      <header class="page-header"><h1>Gracze</h1></header>
+      ${emptyBlock("Brak listy graczy w arkuszu „Gracze”.")}
+    `;
+  }
+
+  const sorted = sortPlayersByMedals(directory, data.disciplines || {});
+
+  const items = sorted
+    .map((entry) => {
+      const name = entry.name;
+      const awards = entry.medals || [];
+      const expanded = expandedName && name === expandedName;
+      const chevron = expanded ? "▾" : "▸";
+      let detail = "";
+      if (expanded) {
+        const profile = buildPlayerProfile(name, data.disciplines || {});
+        detail = `
+          <div class="player-profile">
+            ${renderPlayerMedalsDetail(profile.medals)}
+            ${renderPlayerMatchDiscipline("Piłka Nożna", profile.pilka)}
+            ${renderPlayerMatchDiscipline("Siatkówka", profile.siatkowka)}
+            ${renderPlayerSkillDiscipline("Piłka ind.", profile.pilka_ind)}
+            ${renderPlayerSkillDiscipline("Koszykówka", profile.koszykowka)}
+            ${renderPlayerMatchDiscipline("Badminton", profile.badminton)}
+          </div>`;
+      }
+      return `
+        <li class="gracz-item ${expanded ? "is-expanded" : ""}">
+          <button type="button" class="gracz-toggle" data-toggle-gracz="${esc(name)}" aria-expanded="${expanded}">
+            <span class="chevron" aria-hidden="true">${chevron}</span>
+            <span class="gracz-name">${esc(name)}</span>
+            ${renderMedalIcons(awards)}
+          </button>
+          ${detail}
+        </li>`;
+    })
+    .join("");
+
+  return `
+    <header class="page-header">
+      <h1>Gracze</h1>
+      <p class="hint">Sortowanie: złote → srebrne → brązowe medale, potem alfabetycznie. Kliknij gracza, aby zobaczyć medale i wyniki (tylko jeden rozwinięty naraz).</p>
+    </header>
+    <ul class="gracz-list">${items}</ul>
+  `;
+}
+
+/**
+ * Strefa medalowa — złoty / srebrny / brązowy (ręczne wpisy z arkusza).
+ * @param {any[]} medals
+ */
+function renderMedalZone(medals) {
+  const list = medals?.length
+    ? medals
+    : [
+        { medal: "złoty", name: "", players: "" },
+        { medal: "srebrny", name: "", players: "" },
+        { medal: "brązowy", name: "", players: "" },
+      ];
+
+  const meta = {
+    złoty: { emoji: "🥇", label: "Złoty", cls: "medal--gold" },
+    srebrny: { emoji: "🥈", label: "Srebrny", cls: "medal--silver" },
+    brązowy: { emoji: "🥉", label: "Brązowy", cls: "medal--bronze" },
+  };
+
+  const cards = list
+    .map((m) => {
+      const key = m.medal || "złoty";
+      const info = meta[key] || {
+        emoji: "🏅",
+        label: key,
+        cls: "medal--other",
+      };
+      const name = cellOrDash(m.name);
+      const players = cellStrSafe(m.players);
+      const playersHtml = players
+        ? `<p class="medal-players">${esc(players)}</p>`
+        : "";
+      const empty = !m.name;
+      return `
+        <article class="medal-card ${info.cls} ${empty ? "is-empty" : ""}">
+          <div class="medal-emoji" aria-hidden="true">${info.emoji}</div>
+          <div class="medal-label">${esc(info.label)}</div>
+          <div class="medal-name">${esc(name)}</div>
+          ${playersHtml}
+        </article>`;
+    })
+    .join("");
+
+  return `
+    <section class="block medal-zone">
+      ${sectionTitle("Strefa medalowa")}
+      <p class="hint">Miejsca medalowe wpisywane ręcznie w arkuszu (sekcja # STREFA MEDALOWA).</p>
+      <div class="medal-grid">${cards}</div>
+    </section>`;
+}
+
+function cellOrDash(v) {
+  const s = String(v ?? "").trim();
+  return s || "—";
+}
+
+function cellStrSafe(v) {
+  return String(v ?? "").trim();
+}
+
+/**
  * Render a discipline tab by id.
  * @param {string} tabId
  * @param {any} data
- * @param {{ expandedBasketball?: Set<string> }} [uiState]
+ * @param {{ expandedAttempts?: Set<string>, expandedGracz?: string|null }} [uiState]
  */
 export function renderDiscipline(tabId, data, uiState = {}) {
+  if (tabId === "gracze") {
+    return renderGracze(data, uiState.expandedGracz ?? null);
+  }
+
   const disc = data?.disciplines?.[tabId];
   if (!disc) {
     return emptyBlock("Brak danych dla tej dyscypliny.");
@@ -408,7 +714,26 @@ export function renderDiscipline(tabId, data, uiState = {}) {
       <header class="page-header">
         <h1>${esc(disc.title || "Koszykówka")}</h1>
       </header>
-      ${renderBasketball(disc, uiState.expandedBasketball || new Set())}
+      ${renderSkillRanking(disc, uiState.expandedAttempts || new Set(), {
+        shotKeys: disc.skillShotKeys || ["1P", "2P", "3P", "UK1", "UK2"],
+        emptyMessage: "Brak graczy w arkuszu Koszykówka.",
+        categoriesLabel: "1P / 2P / 3P / UK1 / UK2",
+      })}
+      ${renderMedalZone(disc.medals)}
+    `;
+  }
+
+  if (tabId === "pilka_ind") {
+    return `
+      <header class="page-header">
+        <h1>${esc(disc.title || "Piłka ind.")}</h1>
+      </header>
+      ${renderSkillRanking(disc, uiState.expandedAttempts || new Set(), {
+        shotKeys: disc.skillShotKeys || ["Karne", "1na1", "Luta"],
+        emptyMessage: "Brak graczy w arkuszu Piłka ind.",
+        categoriesLabel: "Karne / 1na1 / Luta",
+      })}
+      ${renderMedalZone(disc.medals)}
     `;
   }
 
@@ -418,6 +743,7 @@ export function renderDiscipline(tabId, data, uiState = {}) {
         <h1>${esc(disc.title || "Inne")}</h1>
       </header>
       ${renderGenericSections(disc.sections)}
+      ${renderMedalZone(disc.medals)}
     `;
   }
 
@@ -453,7 +779,7 @@ export function renderDiscipline(tabId, data, uiState = {}) {
         notesLabel: "Drużyny",
         splitStats: true,
         hint:
-          "Ranking liczony automatycznie z meczów z wynikiem (format X:Y; w arkuszu wpisuj jako tekst, żeby Sheets nie zamienił na godzinę). % zwycięstw ↓, potem różnica setów ↓. Gracz w wielu drużynach — sumowane są mecze wszystkich jego drużyn; w obu składach jednego meczu — liczy się dwukrotnie.",
+          "Ranking liczony automatycznie z meczów z wynikiem (format X:Y; w arkuszu wpisuj jako tekst). % zwycięstw ↓, potem różnica setów ↓. Gracz w wielu drużynach — suma meczów wszystkich drużyn; w obu składach jednego meczu — liczy się dwukrotnie.",
         emptyMessage:
           "Brak graczy w drużynach — uzupełnij składy w arkuszu Siatkówka.",
       })
@@ -461,13 +787,21 @@ export function renderDiscipline(tabId, data, uiState = {}) {
   } else if (tabId === "pilka") {
     parts.push(
       renderRanking(disc.ranking, {
-        scoreLabel: "Gole / %",
-        emptyMessage: "Ranking jest pusty — uzupełnij w arkuszu.",
+        scoreLabel: "Zwycięstwa / mecze",
+        diffLabel: "Różnica goli",
+        notesLabel: "Drużyny",
+        splitStats: true,
+        hint:
+          "Ranking liczony automatycznie z meczów z wynikiem (format X:Y; w arkuszu wpisuj jako tekst). % zwycięstw ↓, potem różnica goli ↓. Gracz w wielu drużynach — suma meczów wszystkich drużyn; w obu składach jednego meczu — liczy się dwukrotnie.",
+        emptyMessage:
+          "Brak graczy w drużynach — uzupełnij składy w arkuszu Piłka Nożna.",
       })
     );
   } else if (disc.ranking?.length) {
     parts.push(renderRanking(disc.ranking, "Statystyki"));
   }
+
+  parts.push(renderMedalZone(disc.medals));
 
   return parts.join("");
 }

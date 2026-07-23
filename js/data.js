@@ -5,9 +5,12 @@
 
 import {
   TABS,
+  exportCsvUrl,
   gvizCsvUrl,
   openSheetUrl,
   CACHE_KEY,
+  BASKETBALL_SHOT_KEYS,
+  FOOTBALL_IND_SHOT_KEYS,
 } from "./config.js";
 
 // ─── CSV helpers ───────────────────────────────────────────────
@@ -104,6 +107,7 @@ const SECTION_MARKERS = {
   matches: /#\s*MECZE/i,
   ranking: /#\s*RANKING/i,
   players: /#\s*GRACZE/i,
+  medals: /#\s*(STREFA\s*MEDALOWA|MEDALE)/i,
   section: /#\s*SEKCJA/i,
 };
 
@@ -112,6 +116,7 @@ const LEGACY_SECTION = {
   matches: /^(MECZE)/i,
   ranking: /^(RANKING)/i,
   players: /^(GRACZE)$/i,
+  medals: /^(STREFA\s*MEDALOWA|MEDALE)$/i,
 };
 
 /**
@@ -163,6 +168,17 @@ function detectHeaderType(row) {
     return "ranking";
   }
 
+  // Medals before teams — headers "medal | nazwa | gracze" must not look like teams
+  if (
+    joined.includes("medal") &&
+    (joined.includes("nazwa") ||
+      joined.includes("gracze") ||
+      joined.includes("sklad") ||
+      joined.includes("skład"))
+  ) {
+    return "medals";
+  }
+
   // Teams: ID + nazwa, players may be one "Gracze" col OR many "Gracz 1/2/3…" cols
   if (
     joined.includes("id_druzyny") ||
@@ -171,7 +187,8 @@ function detectHeaderType(row) {
       (joined.includes("gracze") || /gracz\s*\d/.test(joined)) &&
       !joined.includes("faza") &&
       !joined.includes("wynik (") &&
-      !joined.includes("id_meczu"))
+      !joined.includes("id_meczu") &&
+      !joined.includes("medal"))
   ) {
     return "teams";
   }
@@ -179,7 +196,12 @@ function detectHeaderType(row) {
   if (
     joined.includes("id_gracza") ||
     (joined.includes("imie gracza") && joined.includes("wynik")) ||
-    (joined.includes("imie") && joined.includes("proba"))
+    (joined.includes("imie") && joined.includes("proba")) ||
+    (joined.includes("imie") &&
+      (joined.includes("karne") ||
+        joined.includes("1na1") ||
+        joined.includes("luta") ||
+        joined.includes("1p")))
   ) {
     return "players";
   }
@@ -417,7 +439,16 @@ function parseRankingRow(headers, row) {
   };
 }
 
-const ATTEMPT_SHOT_KEYS = ["1P", "2P", "3P", "UK1", "UK2"];
+/**
+ * Shot keys for individual attempt sports (Koszykówka / Piłka ind.).
+ * @param {string} sheetName
+ * @returns {string[]|null}
+ */
+export function getSkillShotKeys(sheetName) {
+  if (/koszyk/i.test(sheetName)) return BASKETBALL_SHOT_KEYS;
+  if (/pi[lł]ka\s*ind/i.test(sheetName)) return FOOTBALL_IND_SHOT_KEYS;
+  return null;
+}
 
 /**
  * Parse a numeric cell (supports "2,5", "2.5", "1/2", spaces).
@@ -484,18 +515,19 @@ function hasShotValue(raw) {
  * Collect real numeric values per shot type from all players/attempts.
  * "S" markers are excluded (they are derived from this pool).
  * @param {{ attemptRows?: { shots: Record<string, string> }[] }[]} players
+ * @param {string[]} shotKeys
  * @returns {Record<string, number[]>}
  */
-export function collectShotPools(players) {
+export function collectShotPools(players, shotKeys = BASKETBALL_SHOT_KEYS) {
   /** @type {Record<string, number[]>} */
-  const pools = { "1P": [], "2P": [], "3P": [], UK1: [], UK2: [] };
+  const pools = Object.fromEntries(shotKeys.map((k) => [k, []]));
   for (const p of players || []) {
     const rows =
       p.attemptRows?.length > 0
         ? p.attemptRows
-        : buildAttemptRowsFromFlat(p.attempts || {});
+        : buildAttemptRowsFromFlat(p.attempts || {}, shotKeys);
     for (const ar of rows) {
-      for (const key of ATTEMPT_SHOT_KEYS) {
+      for (const key of shotKeys) {
         const raw = ar.shots?.[key];
         if (!cellStr(raw) || isSpecialS(raw)) continue;
         const n = parseNumber(raw);
@@ -539,14 +571,15 @@ function resolveShotValue(raw, shotKey, pools) {
 }
 
 /**
- * Mean of filled shot values in one attempt (1P, 2P, 3P, UK1, UK2).
+ * Mean of filled shot values in one attempt.
  * @param {Record<string, string>} shots
  * @param {Record<string, number[]>|null|undefined} pools
+ * @param {string[]} shotKeys
  * @returns {number|null}
  */
-function averageAttemptShots(shots, pools) {
+function averageAttemptShots(shots, pools, shotKeys = BASKETBALL_SHOT_KEYS) {
   const nums = [];
-  for (const key of ATTEMPT_SHOT_KEYS) {
+  for (const key of shotKeys) {
     const n = resolveShotValue(shots?.[key], key, pools);
     if (n != null) nums.push(n);
   }
@@ -555,29 +588,31 @@ function averageAttemptShots(shots, pools) {
 }
 
 /**
- * Weighted basketball score from any number of attempts:
- * - 1 attempt  → mean of that attempt's shots (1P…UK2)
- * - 2+ attempts → 50% × mean of BEST attempt + 50% × mean of the OTHER attempts' means
- *   Example: means 5, 2, 4 → (5 + (2+4)/2) / 2 = 4.00
- *   NOT the simple average (5+2+4)/3 = 3.67
+ * Weighted attempt score:
+ * - 1 attempt  → mean of that attempt's shots
+ * - 2+ attempts → (mean of BEST attempt + mean of OTHER attempts' means) / 2
  *
  * @param {{ index: number, shots: Record<string, string> }[]} attemptRows
- * @param {Record<string, number[]>|null|undefined} pools  needed to resolve "S"
+ * @param {Record<string, number[]>|null|undefined} pools
+ * @param {string[]} shotKeys
  * @returns {number|null}
  */
-export function computeBasketballScore(attemptRows, pools = null) {
+export function computeAttemptScore(
+  attemptRows,
+  pools = null,
+  shotKeys = BASKETBALL_SHOT_KEYS
+) {
   if (!attemptRows?.length) return null;
 
   /** @type {number[]} */
   const attemptMeans = [];
   for (const ar of attemptRows) {
-    const avg = averageAttemptShots(ar.shots, pools);
+    const avg = averageAttemptShots(ar.shots, pools, shotKeys);
     if (avg != null) attemptMeans.push(avg);
   }
   if (!attemptMeans.length) return null;
   if (attemptMeans.length === 1) return attemptMeans[0];
 
-  // Best attempt (highest mean)
   let bestI = 0;
   for (let i = 1; i < attemptMeans.length; i++) {
     if (attemptMeans[i] > attemptMeans[bestI]) bestI = i;
@@ -585,42 +620,46 @@ export function computeBasketballScore(attemptRows, pools = null) {
   const best = attemptMeans[bestI];
   const others = attemptMeans.filter((_, i) => i !== bestI);
   const othersMean = others.reduce((a, b) => a + b, 0) / others.length;
-  // Explicit form: (best + othersMean) / 2
   return (best + othersMean) / 2;
 }
 
+/** @deprecated use computeAttemptScore */
+export function computeBasketballScore(attemptRows, pools = null) {
+  return computeAttemptScore(attemptRows, pools, BASKETBALL_SHOT_KEYS);
+}
+
 /**
- * After all players are parsed: resolve "S" and recompute scores (never use sheet AVERAGE).
+ * After all players are parsed: resolve "S" and recompute scores.
  * @param {any[]} players
+ * @param {string[]} shotKeys
  */
-export function finalizeBasketballPlayers(players) {
-  // Ensure attempt rows exist (rebuild from flat headers if needed)
+export function finalizeSkillPlayers(players, shotKeys = BASKETBALL_SHOT_KEYS) {
   for (const p of players) {
     if (!p.attemptRows?.length && p.attempts && Object.keys(p.attempts).length) {
-      p.attemptRows = buildAttemptRowsFromFlat(p.attempts);
+      p.attemptRows = buildAttemptRowsFromFlat(p.attempts, shotKeys);
     }
   }
 
-  const pools = collectShotPools(players);
+  const pools = collectShotPools(players, shotKeys);
   /** @type {Record<string, number|null>} */
   const sResolved = {};
-  for (const key of ATTEMPT_SHOT_KEYS) {
+  for (const key of shotKeys) {
     sResolved[key] = specialSValue(key, pools);
   }
 
   for (const p of players) {
-    // Always recompute from attempts + S pools — do NOT use sheet WYNIK (simple AVERAGE)
-    const scoreNum = computeBasketballScore(p.attemptRows || [], pools);
+    const scoreNum = computeAttemptScore(p.attemptRows || [], pools, shotKeys);
     p.scoreNum = scoreNum;
     p.score = scoreNum != null ? formatScore2(scoreNum) : "";
+    p.shotKeys = shotKeys;
     p.sResolved = sResolved;
     p.attemptMeans = (p.attemptRows || []).map((ar) =>
-      averageAttemptShots(ar.shots, pools)
+      averageAttemptShots(ar.shots, pools, shotKeys)
     );
     p.resolvedAttemptRows = (p.attemptRows || []).map((ar) => {
       /** @type {Record<string, string>} */
       const shots = {};
-      for (const key of ATTEMPT_SHOT_KEYS) {
+      for (const key of shotKeys) {
         const raw = ar.shots?.[key] || "";
         if (isSpecialS(raw)) {
           const n = specialSValue(key, pools);
@@ -635,71 +674,109 @@ export function finalizeBasketballPlayers(players) {
   return pools;
 }
 
+/** @deprecated use finalizeSkillPlayers */
+export function finalizeBasketballPlayers(players) {
+  return finalizeSkillPlayers(players, BASKETBALL_SHOT_KEYS);
+}
+
 /**
- * Detect attempt index + shot key from header like "Próba 1 - 1P".
- * Works for Próba N beyond 3; tolerates odd dashes/spaces from Sheets.
+ * Map matched header token to a canonical shot key from shotKeys.
+ * @param {string} token
+ * @param {string[]} shotKeys
+ */
+function canonicalShotKey(token, shotKeys) {
+  const t = normalizeHeader(token).replace(/\s+/g, "");
+  for (const k of shotKeys) {
+    if (normalizeHeader(k).replace(/\s+/g, "") === t) return k;
+  }
+  // Basketball style 1P/UK1
+  const upper = token.toUpperCase().replace(/\s+/g, "");
+  if (shotKeys.includes(upper)) return upper;
+  return null;
+}
+
+/**
+ * Detect attempt index + shot key from header like "Próba 1 - Karne" / "Próba 1 - 1P".
  * @param {string} header
+ * @param {string[]} shotKeys
  * @returns {{ attempt: number, shot: string }|null}
  */
-function parseAttemptHeader(header) {
+function parseAttemptHeader(header, shotKeys = BASKETBALL_SHOT_KEYS) {
   const raw = cellStr(header);
   if (!raw) return null;
   const nh = normalizeHeader(raw);
 
-  // "proba 1 - 1p", "proba 1 – 1p", "proba1 1p", "proba 2 uk1"
+  // Escape shot keys for regex (1na1, uk1, 1p…)
+  const alts = shotKeys
+    .map((k) =>
+      normalizeHeader(k)
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/\s+/g, "\\s*")
+    )
+    .join("|");
+  if (!alts) return null;
+
   let m = nh.match(
-    /proba\s*(\d+)\s*[-–—:._\s]*\s*(1\s*p|2\s*p|3\s*p|uk\s*1|uk\s*2)/i
+    new RegExp(
+      `proba\\s*(\\d+)\\s*[-–—:._\\s]*\\s*(${alts})`,
+      "i"
+    )
   );
   if (!m) {
-    // "1 - 1p" / "2-uk1" when "proba" was lost in merge
     m = nh.match(
-      /(?:^|[^a-z0-9])(\d{1,2})\s*[-–—:._\s]+\s*(1\s*p|2\s*p|3\s*p|uk\s*1|uk\s*2)(?:$|[^a-z0-9])/i
+      new RegExp(
+        `(?:^|[^a-z0-9])(\\d{1,2})\\s*[-–—:._\\s]+\\s*(${alts})(?:$|[^a-z0-9])`,
+        "i"
+      )
     );
   }
   if (!m) {
-    // last resort: any "proba N ... 1p"
-    m = nh.match(/proba\s*(\d+).{0,12}?(1p|2p|3p|uk\s*1|uk\s*2)/i);
+    m = nh.match(new RegExp(`proba\\s*(\\d+).{0,16}?(${alts})`, "i"));
   }
   if (!m) return null;
 
   const attempt = Number(m[1]);
-  const shot = m[2].toUpperCase().replace(/\s+/g, "");
-  if (!ATTEMPT_SHOT_KEYS.includes(shot)) return null;
+  const shot = canonicalShotKey(m[2], shotKeys);
+  if (!shot) return null;
   if (!Number.isFinite(attempt) || attempt < 1) return null;
   return { attempt, shot };
 }
 
-function emptyShotMap() {
-  return { "1P": "", "2P": "", "3P": "", UK1: "", UK2: "" };
+/**
+ * @param {string[]} shotKeys
+ */
+function emptyShotMap(shotKeys = BASKETBALL_SHOT_KEYS) {
+  return Object.fromEntries(shotKeys.map((k) => [k, ""]));
 }
 
 /**
- * Rebuild attempt rows from flat { "Próba 1 - 1P": "5", ... } map.
+ * Rebuild attempt rows from flat { "Próba 1 - Karne": "5", ... } map.
  * @param {Record<string, string>} flat
+ * @param {string[]} shotKeys
  */
-function buildAttemptRowsFromFlat(flat) {
+function buildAttemptRowsFromFlat(flat, shotKeys = BASKETBALL_SHOT_KEYS) {
   /** @type {Map<number, Record<string, string>>} */
   const byAttempt = new Map();
   for (const [h, v] of Object.entries(flat || {})) {
-    const meta = parseAttemptHeader(h);
+    const meta = parseAttemptHeader(h, shotKeys);
     if (!meta || !hasShotValue(v)) continue;
     if (!byAttempt.has(meta.attempt)) {
-      byAttempt.set(meta.attempt, emptyShotMap());
+      byAttempt.set(meta.attempt, emptyShotMap(shotKeys));
     }
     byAttempt.get(meta.attempt)[meta.shot] = cellStr(v);
   }
   return [...byAttempt.keys()]
     .sort((a, b) => a - b)
     .map((index) => ({ index, shots: byAttempt.get(index) }))
-    .filter((ar) => ATTEMPT_SHOT_KEYS.some((k) => hasShotValue(ar.shots[k])));
+    .filter((ar) => shotKeys.some((k) => hasShotValue(ar.shots[k])));
 }
 
 /**
  * @param {string[]} headers
  * @param {string[]} row
+ * @param {string[]} shotKeys
  */
-function parseBasketballPlayerRow(headers, row) {
-  // Prefer "imie" — avoid matching random "gracz" columns
+function parseSkillPlayerRow(headers, row, shotKeys = BASKETBALL_SHOT_KEYS) {
   const nameIdx = findCol(headers, [
     (h) => h.includes("imie"),
     (h) => h === "gracz" || h.startsWith("gracz "),
@@ -710,10 +787,8 @@ function parseBasketballPlayerRow(headers, row) {
     (h) => h.startsWith("wynik") && !h.includes("proba"),
   ]);
 
-  // name column: never use pure ID
   let name = nameIdx >= 0 ? cellStr(row[nameIdx]) : "";
   if (!name) {
-    // fallback: first non-numeric, non-empty cell that isn't a score
     for (let i = 0; i < row.length; i++) {
       const c = cellStr(row[i]);
       if (!c || /^\d+(\.0+)?$/.test(c)) continue;
@@ -726,7 +801,6 @@ function parseBasketballPlayerRow(headers, row) {
     }
   }
   if (!name || /^imie/i.test(name) || /^id_/i.test(name)) return null;
-  // Keep "Gracz 1", "Gracz 4", real names, etc.
 
   let scoreRaw = scoreIdx >= 0 ? cellStr(row[scoreIdx]) : "";
   if (scoreRaw.startsWith("=")) scoreRaw = "";
@@ -737,14 +811,18 @@ function parseBasketballPlayerRow(headers, row) {
   const attemptsFlat = {};
 
   const nHeaders = Math.max(headers.length, row.length);
+  const flatHint = shotKeys
+    .map((k) => normalizeHeader(k).replace(/\s+/g, ""))
+    .join("|");
+
   for (let i = 0; i < nHeaders; i++) {
     const h = headers[i] != null ? headers[i] : "";
-    const meta = parseAttemptHeader(h);
+    const meta = parseAttemptHeader(h, shotKeys);
     const v = cellStr(row[i]);
 
     if (meta) {
       if (!byAttempt.has(meta.attempt)) {
-        byAttempt.set(meta.attempt, emptyShotMap());
+        byAttempt.set(meta.attempt, emptyShotMap(shotKeys));
       }
       if (hasShotValue(v)) {
         byAttempt.get(meta.attempt)[meta.shot] = v;
@@ -753,27 +831,27 @@ function parseBasketballPlayerRow(headers, row) {
       continue;
     }
 
-    // Fallback flat capture
     if (hasShotValue(v)) {
       const nh = normalizeHeader(h);
-      if (nh.includes("proba") || /1p|2p|3p|uk\s*[12]/.test(nh)) {
+      if (
+        nh.includes("proba") ||
+        new RegExp(flatHint, "i").test(nh.replace(/\s+/g, ""))
+      ) {
         attemptsFlat[cellStr(h) || `col${i}`] = v;
       }
     }
   }
 
-  // Build attempt rows (only attempts with at least one value / S)
   let attemptRows = [...byAttempt.keys()]
     .sort((a, b) => a - b)
     .map((index) => ({ index, shots: byAttempt.get(index) }))
-    .filter((ar) => ATTEMPT_SHOT_KEYS.some((k) => hasShotValue(ar.shots[k])));
+    .filter((ar) => shotKeys.some((k) => hasShotValue(ar.shots[k])));
 
   if (!attemptRows.length && Object.keys(attemptsFlat).length) {
-    attemptRows = buildAttemptRowsFromFlat(attemptsFlat);
+    attemptRows = buildAttemptRowsFromFlat(attemptsFlat, shotKeys);
   }
 
-  // Provisional score without S pool (finalized later)
-  const scoreNum = computeBasketballScore(attemptRows, null);
+  const scoreNum = computeAttemptScore(attemptRows, null, shotKeys);
 
   return {
     name,
@@ -782,7 +860,13 @@ function parseBasketballPlayerRow(headers, row) {
     _scoreRaw: scoreRaw,
     attempts: attemptsFlat,
     attemptRows,
+    shotKeys,
   };
+}
+
+/** @deprecated use parseSkillPlayerRow */
+function parseBasketballPlayerRow(headers, row) {
+  return parseSkillPlayerRow(headers, row, BASKETBALL_SHOT_KEYS);
 }
 
 function parseGenericRow(headers, row) {
@@ -800,6 +884,137 @@ function parseGenericRow(headers, row) {
   return hasData ? obj : null;
 }
 
+const MEDAL_ORDER = ["złoty", "srebrny", "brązowy"];
+
+function defaultMedalSlots() {
+  return MEDAL_ORDER.map((medal) => ({
+    medal,
+    name: "",
+    players: "",
+  }));
+}
+
+/**
+ * Normalize medal list to always have złoty / srebrny / brązowy in order.
+ * @param {any[]} list
+ */
+function normalizeMedalList(list) {
+  const byKey = new Map();
+  for (const m of list || []) {
+    const key = normalizeMedalKey(m.medal || m.place || "");
+    if (!key) continue;
+    byKey.set(key, {
+      medal: key,
+      name: cellStr(m.name),
+      players: cellStr(m.players),
+    });
+  }
+  return MEDAL_ORDER.map(
+    (medal) => byKey.get(medal) || { medal, name: "", players: "" }
+  );
+}
+
+function normalizeMedalKey(raw) {
+  // ł does not always strip via NFD — handle explicitly
+  const s = normalizeHeader(raw).replace(/ł/g, "l");
+  if (!s) return "";
+  if (
+    s.includes("zlot") ||
+    s === "gold" ||
+    s === "1" ||
+    String(raw).includes("🥇")
+  ) {
+    return "złoty";
+  }
+  if (
+    s.includes("srebr") ||
+    s === "silver" ||
+    s === "2" ||
+    String(raw).includes("🥈")
+  ) {
+    return "srebrny";
+  }
+  if (
+    s.includes("braz") ||
+    s === "bronze" ||
+    s === "3" ||
+    String(raw).includes("🥉")
+  ) {
+    return "brązowy";
+  }
+  return "";
+}
+
+/**
+ * Parse Strefa medalowa table rows.
+ * Expected: medal | nazwa | gracze
+ * @param {string[]} headers
+ * @param {string[][]} rows
+ */
+function parseMedalSection(headers, rows) {
+  /** @type {any[]} */
+  const out = [];
+  const h = (headers || []).map(cellStr);
+  const norms = h.map(normalizeHeader);
+
+  let medalIdx = norms.findIndex(
+    (x) => x.includes("medal") || x.includes("miejsce") || x === "pos"
+  );
+  let nameIdx = norms.findIndex(
+    (x) =>
+      x.includes("nazwa") ||
+      x.includes("druzyna") ||
+      (x.includes("gracz") && !x.includes("gracze")) ||
+      x.includes("zwyciezca") ||
+      x === "imie"
+  );
+  let playersIdx = norms.findIndex(
+    (x) =>
+      x.includes("gracze") ||
+      x.includes("sklad") ||
+      x.includes("zawodnicy") ||
+      x.includes("skład")
+  );
+
+  const headerLooksLikeData = h.some((c) => normalizeMedalKey(c));
+
+  /** @type {string[][]} */
+  let dataRows = rows || [];
+  if (headerLooksLikeData && medalIdx < 0) {
+    dataRows = [headers, ...(rows || [])];
+    medalIdx = 0;
+    nameIdx = 1;
+    playersIdx = 2;
+  } else {
+    if (medalIdx < 0) medalIdx = 0;
+    if (nameIdx < 0) nameIdx = Math.min(1, h.length ? 1 : 0);
+    if (playersIdx < 0) playersIdx = 2;
+  }
+
+  for (const row of dataRows) {
+    if (isEmptyRow(row) || isCommentRow(row)) continue;
+    let medal = normalizeMedalKey(cellStr(row[medalIdx]));
+    if (!medal) medal = normalizeMedalKey(cellStr(row[0]));
+    if (!medal) continue;
+
+    let name = cellStr(row[nameIdx]);
+    let players = playersIdx >= 0 ? cellStr(row[playersIdx]) : "";
+
+    if (normalizeMedalKey(name) === medal) {
+      name = cellStr(row[nameIdx + 1] ?? row[1]);
+      if (!players) players = cellStr(row[nameIdx + 2] ?? row[2]);
+    }
+    if (/^(nazwa|gracze|medal|sklad|skład)$/i.test(name)) continue;
+
+    out.push({
+      medal,
+      name: name || "",
+      players: players || "",
+    });
+  }
+  return out;
+}
+
 // ─── Sheet parsers ─────────────────────────────────────────────
 
 /**
@@ -812,6 +1027,7 @@ function rowLooksLikeColumnHeaders(row) {
   const joined = norms.join(" | ");
   if (joined.includes("nazwa druz") || joined.includes("nazwa dru")) return true;
   if (/gracz\s*\d/.test(joined) || joined.includes("gracze")) return true;
+  if (joined.includes("medal") && joined.includes("nazwa")) return true;
   if (joined.includes("faza") && (joined.includes("druzyna") || joined.includes("wynik"))) {
     return true;
   }
@@ -858,6 +1074,9 @@ function defaultHeadersForSection(type, width) {
   }
   if (type === "players") {
     return ["ID_gracza", "Imię gracza", "WYNIK"];
+  }
+  if (type === "medals") {
+    return ["medal", "nazwa", "gracze"];
   }
   return Array.from({ length: w }, (_, i) => `Kolumna ${i + 1}`);
 }
@@ -1037,6 +1256,7 @@ export function parseDisciplineSheet(sheetName, rows) {
     matches: [],
     ranking: [],
     players: [],
+    medals: [], // Strefa medalowa: złoty / srebrny / brązowy
     sections: [], // generic for Inne
   };
 
@@ -1066,13 +1286,17 @@ export function parseDisciplineSheet(sheetName, rows) {
         if (r) result.ranking.push(r);
       }
     } else if (sec.type === "players") {
-      const isBasketball =
-        /koszyk/i.test(sheetName) ||
-        sec.headers.some((h) => /proba|próba|1p|2p|3p/i.test(h));
+      const shotKeys =
+        getSkillShotKeys(sheetName) ||
+        (sec.headers.some((h) => /karne|1na1|luta/i.test(h))
+          ? FOOTBALL_IND_SHOT_KEYS
+          : sec.headers.some((h) => /1p|2p|3p|uk\s*1|uk\s*2/i.test(h))
+            ? BASKETBALL_SHOT_KEYS
+            : null);
       for (const row of sec.rows) {
         if (isCommentRow(row)) continue;
-        if (isBasketball) {
-          const p = parseBasketballPlayerRow(sec.headers, row);
+        if (shotKeys) {
+          const p = parseSkillPlayerRow(sec.headers, row, shotKeys);
           if (p) result.players.push(p);
         } else {
           // simple player list: ID + name
@@ -1088,6 +1312,9 @@ export function parseDisciplineSheet(sheetName, rows) {
           }
         }
       }
+    } else if (sec.type === "medals") {
+      const parsed = parseMedalSection(sec.headers, sec.rows);
+      if (parsed.length) result.medals = parsed;
     } else if (sec.type === "section") {
       const headers = sec.headers;
       const dataRows = [];
@@ -1107,18 +1334,24 @@ export function parseDisciplineSheet(sheetName, rows) {
     }
   }
 
-  // Legacy basketball: no # GRACZE, only header with ID_gracza
-  if (/koszyk/i.test(sheetName) && result.players.length === 0) {
-    // try find header in all sections of type that might have been missed
+  // Ensure medal slots exist even if empty (app can still show placeholders)
+  if (!result.medals.length) {
+    result.medals = defaultMedalSlots();
+  } else {
+    result.medals = normalizeMedalList(result.medals);
+  }
+
+  // Legacy skill sheet: no # GRACZE, only header with ID_gracza
+  const skillKeys = getSkillShotKeys(sheetName);
+  if (skillKeys && result.players.length === 0) {
     for (const sec of sections) {
       if (sec.headers.some((h) => /id_gracza|imie gracza/i.test(h))) {
         for (const row of sec.rows) {
-          const p = parseBasketballPlayerRow(sec.headers, row);
+          const p = parseSkillPlayerRow(sec.headers, row, skillKeys);
           if (p) result.players.push(p);
         }
       }
     }
-    // raw scan
     if (result.players.length === 0) {
       for (let i = 0; i < cleaned.length; i++) {
         const ht = detectHeaderType(cleaned[i]);
@@ -1128,7 +1361,7 @@ export function parseDisciplineSheet(sheetName, rows) {
             if (isEmptyRow(cleaned[j]) || isCommentRow(cleaned[j])) continue;
             if (detectSectionMarker(cellStr(cleaned[j][0]))) break;
             if (detectHeaderType(cleaned[j])) break;
-            const p = parseBasketballPlayerRow(headers, cleaned[j]);
+            const p = parseSkillPlayerRow(headers, cleaned[j], skillKeys);
             if (p) result.players.push(p);
           }
           break;
@@ -1141,7 +1374,8 @@ export function parseDisciplineSheet(sheetName, rows) {
   if (
     result.players.length === 0 &&
     result.matches.length > 0 &&
-    result.teams.length === 0
+    result.teams.length === 0 &&
+    !skillKeys
   ) {
     const names = new Set();
     for (const m of result.matches) {
@@ -1156,9 +1390,10 @@ export function parseDisciplineSheet(sheetName, rows) {
     }));
   }
 
-  // Basketball: resolve "S" markers, recompute scores, then ranking
-  if (/koszyk/i.test(sheetName) && result.players.length) {
-    finalizeBasketballPlayers(result.players);
+  // Individual skill sports (Koszykówka, Piłka ind.): S-resolve + ranking by score
+  if (skillKeys && result.players.length) {
+    finalizeSkillPlayers(result.players, skillKeys);
+    result.skillShotKeys = skillKeys;
     const sorted = [...result.players].sort(
       (a, b) => (b.scoreNum ?? -Infinity) - (a.scoreNum ?? -Infinity)
     );
@@ -1172,10 +1407,13 @@ export function parseDisciplineSheet(sheetName, rows) {
     }));
   }
 
-  // Volleyball: auto ranking from teams + matches (overrides sheet ranking)
-  // Sort: win% desc, then set difference desc (per sheet rules)
-  if (/siatk/i.test(sheetName)) {
-    result.ranking = computeVolleyballRanking(result.teams, result.matches);
+  // Team sports: auto ranking from rosters + matches (overrides sheet ranking)
+  // Piłka Nożna (team) — not "Piłka ind."
+  if (
+    /siatk/i.test(sheetName) ||
+    (/pi[lł]ka/i.test(sheetName) && !/ind/i.test(sheetName))
+  ) {
+    result.ranking = computeTeamSportRanking(result.teams, result.matches);
     result.rankingAuto = true;
   }
 
@@ -1257,21 +1495,24 @@ function isPlaceholderSide(name) {
   if (/^tbd$/i.test(n)) return true;
   if (/^—$|^-$|^–$|^n\/?a$/i.test(n)) return true;
   if (/^(zwyciezca|przegrany|finalista)/i.test(normName(n))) return true;
+  // Placeholder like "Drużyna XY" / "Team ?"
+  if (/\bxy\b|\?+/i.test(n)) return true;
   return false;
 }
 
 /**
- * Build individual ranking for volleyball.
+ * Individual ranking for team sports (Siatkówka / Piłka Nożna).
  * - Player may belong to multiple teams (all memberships counted)
  * - If both teams in a match include the player, the match counts twice
  *   (once from each team's perspective)
- * - Only matches with a parseable score count as played
- * - Sort: win rate desc, then set difference desc, then name
+ * - Only matches with a parseable score X:Y count as played
+ * - Sort: win rate desc, then score difference (sets or goals) desc, then name
+ * - Draw (X:Y equal): match played, no win, diff 0 for that side
  *
  * @param {{ name: string, players: string[] }[]} teams
  * @param {{ phase: string, side1: string, side2: string, score: string }[]} matches
  */
-export function computeVolleyballRanking(teams, matches) {
+export function computeTeamSportRanking(teams, matches) {
   /** @type {Map<string, { display: string, teams: Set<string> }>} */
   const players = new Map();
 
@@ -1422,14 +1663,38 @@ export function computeVolleyballRanking(teams, matches) {
   }));
 }
 
+/** @deprecated use computeTeamSportRanking */
+export const computeVolleyballRanking = computeTeamSportRanking;
+
 // ─── Fetch layer ───────────────────────────────────────────────
 
 /**
- * Fetch sheet as string[][] via gviz CSV, fallback OpenSheet.
+ * Fetch sheet as string[][].
+ * Prefer official CSV export (keeps text like "s"); gviz is fallback only
+ * because it type-coerces columns and drops non-numeric cells (e.g. H9 = "s").
  * @param {string} sheetName
  */
 async function fetchSheetRows(sheetName) {
-  // 1) gviz CSV
+  // 1) Official CSV export by gid — preserves "s" / mixed types, CORS *
+  const exportUrl = exportCsvUrl(sheetName);
+  if (exportUrl) {
+    try {
+      const res = await fetch(exportUrl, {
+        cache: "no-store",
+        mode: "cors",
+      });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && !text.trimStart().startsWith("<")) {
+          return parseCsv(text);
+        }
+      }
+    } catch (e) {
+      console.warn("export csv failed for", sheetName, e);
+    }
+  }
+
+  // 2) gviz CSV (may drop text in numeric-looking columns)
   try {
     const res = await fetch(gvizCsvUrl(sheetName), {
       cache: "no-store",
@@ -1437,8 +1702,12 @@ async function fetchSheetRows(sheetName) {
     });
     if (res.ok) {
       const text = await res.text();
-      // gviz sometimes returns HTML error page
       if (text && !text.trimStart().startsWith("<")) {
+        console.warn(
+          "Using gviz for",
+          sheetName,
+          "— text cells like 's' may be missing"
+        );
         return parseCsv(text);
       }
     }
@@ -1446,7 +1715,7 @@ async function fetchSheetRows(sheetName) {
     console.warn("gviz fetch failed for", sheetName, e);
   }
 
-  // 2) OpenSheet JSON
+  // 3) OpenSheet JSON
   try {
     const res = await fetch(openSheetUrl(sheetName), {
       cache: "no-store",
@@ -1455,8 +1724,6 @@ async function fetchSheetRows(sheetName) {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length) {
-        // OpenSheet returns array of objects (first row = keys)
-        // Multi-section sheets are imperfect — use as fallback only
         const keys = Object.keys(data[0]);
         const rows = [keys];
         for (const obj of data) {
@@ -1470,7 +1737,7 @@ async function fetchSheetRows(sheetName) {
     console.warn("opensheet fetch failed for", sheetName, e);
   }
 
-  // 3) Bundled sample from local xlsx (offline / dev)
+  // 4) Bundled sample (offline / dev)
   try {
     const res = await fetch("./data/sample.json", { cache: "no-store" });
     if (res.ok) {
@@ -1488,13 +1755,370 @@ async function fetchSheetRows(sheetName) {
 }
 
 /**
+ * Parse Gracze sheet — keep sheet order (alphabetically maintained there).
+ * @param {string[][]} rows
+ * @returns {{ id: string, name: string }[]}
+ */
+export function parsePlayersDirectory(rows) {
+  const cleaned = stripLeadingEmptyCols(rows);
+  const sections = splitSections(cleaned);
+  /** @type {{ id: string, name: string }[]} */
+  const list = [];
+  const seen = new Set();
+
+  const pushName = (id, name) => {
+    const n = cellStr(name);
+    if (!n || /^imie/i.test(n) || /^gracz$/i.test(n) || /^id_/i.test(n)) return;
+    const key = normName(n);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    list.push({ id: cellStr(id), name: n });
+  };
+
+  for (const sec of sections) {
+    if (sec.type === "players" || sec.type === "teams") {
+      // players section preferred
+    }
+    if (sec.headers?.length && sec.rows?.length) {
+      const nameIdx = findCol(sec.headers, [
+        (h) => h.includes("imie"),
+        (h) => h.includes("gracz") && !h.includes("id"),
+        (h) => h === "nazwa",
+      ]);
+      const idIdx = findCol(sec.headers, [
+        (h) => h.includes("id_gracza"),
+        (h) => h === "id",
+      ]);
+      for (const row of sec.rows) {
+        if (isCommentRow(row) || isEmptyRow(row)) continue;
+        const name =
+          nameIdx >= 0 ? cellStr(row[nameIdx]) : cellStr(row[1]) || cellStr(row[0]);
+        const id = idIdx >= 0 ? cellStr(row[idIdx]) : cellStr(row[0]);
+        pushName(id, name);
+      }
+    }
+  }
+
+  // Fallback raw scan
+  if (!list.length) {
+    for (let i = 0; i < cleaned.length; i++) {
+      const ht = detectHeaderType(cleaned[i]);
+      if (ht === "players" || cleaned[i].some((c) => /imie|gracz/i.test(cellStr(c)))) {
+        const headers = cleaned[i].map(cellStr);
+        const nameIdx = findCol(headers, [
+          (h) => h.includes("imie"),
+          (h) => h.includes("gracz") && !h.includes("id"),
+        ]);
+        const idIdx = findCol(headers, [(h) => h.includes("id")]);
+        for (let j = i + 1; j < cleaned.length; j++) {
+          if (isEmptyRow(cleaned[j]) || isCommentRow(cleaned[j])) continue;
+          if (detectSectionMarker(cellStr(cleaned[j][0]))) break;
+          const name =
+            nameIdx >= 0
+              ? cellStr(cleaned[j][nameIdx])
+              : cellStr(cleaned[j][1]) || cellStr(cleaned[j][0]);
+          const id =
+            idIdx >= 0 ? cellStr(cleaned[j][idIdx]) : cellStr(cleaned[j][0]);
+          pushName(id, name);
+        }
+        break;
+      }
+    }
+  }
+
+  return list;
+}
+
+function namesMatch(a, b) {
+  return normName(a) === normName(b) && normName(a) !== "";
+}
+
+/**
+ * Teams containing this player (team sports).
+ * @param {string} playerName
+ * @param {{ name: string, players: string[] }[]} teams
+ */
+function teamsForPlayer(playerName, teams) {
+  const out = [];
+  for (const t of teams || []) {
+    const list = Array.isArray(t.players) ? t.players : [];
+    if (list.some((p) => namesMatch(p, playerName))) {
+      out.push(t.name);
+    }
+  }
+  return out;
+}
+
+/**
+ * Match involvements for a player in a team-sport discipline.
+ * @param {string} playerName
+ * @param {any} disc
+ */
+export function playerTeamMatchCards(playerName, disc) {
+  const myTeams = teamsForPlayer(playerName, disc?.teams || []);
+  const myTeamKeys = new Set(myTeams.map((t) => normNameLoose(t)));
+  /** @type {any[]} */
+  const cards = [];
+
+  for (const m of disc?.matches || []) {
+    if (isPlaceholderSide(m.side1) && isPlaceholderSide(m.side2)) continue;
+    const s1 = !isPlaceholderSide(m.side1) && myTeamKeys.has(normNameLoose(m.side1));
+    const s2 = !isPlaceholderSide(m.side2) && myTeamKeys.has(normNameLoose(m.side2));
+    if (!s1 && !s2) continue;
+
+    const score = parseMatchScore(m.score);
+    let outcome = "pending"; // pending | win | loss | draw | both
+    if (s1 && s2) {
+      outcome = "both";
+    } else if (score) {
+      if (score.a === score.b) outcome = "draw";
+      else if (s1) outcome = score.a > score.b ? "win" : "loss";
+      else outcome = score.b > score.a ? "win" : "loss";
+    }
+
+    cards.push({
+      phase: m.phase,
+      side1: m.side1,
+      side2: m.side2,
+      score: m.score || "",
+      mine1: s1,
+      mine2: s2,
+      outcome,
+    });
+  }
+  return { teams: myTeams, matches: cards };
+}
+
+/**
+ * Match involvements for individual match sports (Badminton).
+ * @param {string} playerName
+ * @param {any} disc
+ */
+export function playerIndividualMatchCards(playerName, disc) {
+  /** @type {any[]} */
+  const cards = [];
+  for (const m of disc?.matches || []) {
+    const s1 = namesMatch(m.side1, playerName);
+    const s2 = namesMatch(m.side2, playerName);
+    if (!s1 && !s2) continue;
+    if (isPlaceholderSide(m.side1) && isPlaceholderSide(m.side2)) continue;
+
+    const score = parseMatchScore(m.score);
+    let outcome = "pending";
+    if (s1 && s2) {
+      outcome = "both";
+    } else if (score) {
+      if (score.a === score.b) outcome = "draw";
+      else if (s1) outcome = score.a > score.b ? "win" : "loss";
+      else outcome = score.b > score.a ? "win" : "loss";
+    }
+
+    cards.push({
+      phase: m.phase,
+      side1: m.side1,
+      side2: m.side2,
+      score: m.score || "",
+      mine1: s1,
+      mine2: s2,
+      outcome,
+    });
+  }
+  return { matches: cards };
+}
+
+/**
+ * Skill ranking standing for a player.
+ * @param {string} playerName
+ * @param {any} disc
+ */
+export function playerSkillStanding(playerName, disc) {
+  if (!disc) return null;
+  const players = disc.players || [];
+  const sorted = [...players].sort(
+    (a, b) => (b.scoreNum ?? -Infinity) - (a.scoreNum ?? -Infinity)
+  );
+  const idx = sorted.findIndex((p) => namesMatch(p.name, playerName));
+  if (idx < 0) {
+    // try ranking list
+    const rIdx = (disc.ranking || []).findIndex((r) =>
+      namesMatch(r.player, playerName)
+    );
+    if (rIdx < 0) return null;
+    const r = disc.ranking[rIdx];
+    return {
+      place: r.place || String(rIdx + 1),
+      score: r.winRate || "—",
+      scoreNum: null,
+    };
+  }
+  const p = sorted[idx];
+  return {
+    place: String(idx + 1),
+    score: p.score || "—",
+    scoreNum: p.scoreNum,
+  };
+}
+
+/**
+ * Map discipline id → display label for medal attribution.
+ */
+const DISCIPLINE_LABELS = {
+  pilka: "Piłka Nożna",
+  pilka_ind: "Piłka ind.",
+  siatkowka: "Siatkówka",
+  koszykowka: "Koszykówka",
+  badminton: "Badminton",
+  inne: "Inne",
+};
+
+/**
+ * Does this medal entry award the given player?
+ * Matches: individual name, name in "gracze" list, or team roster when nazwa = drużyna.
+ * @param {string} playerName
+ * @param {{ medal: string, name: string, players: string }} entry
+ * @param {any} disc
+ */
+function medalAwardsPlayer(playerName, entry, disc) {
+  if (!entry?.name && !entry?.players) return false;
+  if (namesMatch(entry.name, playerName)) return { via: null };
+
+  // Explicit roster in medal row
+  const listed = splitPlayerList(entry.players || "");
+  if (listed.some((p) => namesMatch(p, playerName))) {
+    return { via: entry.name || null };
+  }
+
+  // Team name: player is on that team in this discipline
+  const teams = disc?.teams || [];
+  if (entry.name && teams.length) {
+    const team = teams.find((t) => namesMatch(t.name, entry.name));
+    if (team) {
+      const roster = Array.isArray(team.players) ? team.players : [];
+      if (roster.some((p) => namesMatch(p, playerName))) {
+        return { via: team.name };
+      }
+    }
+    // Also: medal.nazwa is team-like and player is on a team with that name
+    const myTeams = teamsForPlayer(playerName, teams);
+    if (myTeams.some((t) => namesMatch(t, entry.name))) {
+      return { via: entry.name };
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Collect all medals for a player across disciplines.
+ * @param {string} playerName
+ * @param {Record<string, any>} disciplines
+ * @returns {{ medal: string, disciplineId: string, discipline: string, recipient: string, via: string|null }[]}
+ */
+export function collectPlayerMedals(playerName, disciplines) {
+  /** @type {{ medal: string, disciplineId: string, discipline: string, recipient: string, via: string|null }[]} */
+  const awards = [];
+  const order = [
+    "pilka",
+    "siatkowka",
+    "pilka_ind",
+    "koszykowka",
+    "badminton",
+    "inne",
+  ];
+
+  for (const id of order) {
+    const disc = disciplines?.[id];
+    if (!disc?.medals?.length) continue;
+    const label = DISCIPLINE_LABELS[id] || disc.title || id;
+    for (const entry of disc.medals) {
+      if (!entry.name && !entry.players) continue;
+      const hit = medalAwardsPlayer(playerName, entry, disc);
+      if (!hit) continue;
+      awards.push({
+        medal: entry.medal,
+        disciplineId: id,
+        discipline: label,
+        recipient: entry.name || playerName,
+        via: hit.via,
+      });
+    }
+  }
+
+  // Sort awards: gold first, then silver, bronze; then by discipline label
+  const rank = { złoty: 0, srebrny: 1, brązowy: 2 };
+  awards.sort((a, b) => {
+    const ra = rank[a.medal] ?? 9;
+    const rb = rank[b.medal] ?? 9;
+    if (ra !== rb) return ra - rb;
+    return a.discipline.localeCompare(b.discipline, "pl");
+  });
+
+  return awards;
+}
+
+/**
+ * Count medals by type.
+ * @param {{ medal: string }[]} awards
+ */
+export function countMedals(awards) {
+  const c = { złoty: 0, srebrny: 0, brązowy: 0 };
+  for (const a of awards || []) {
+    if (c[a.medal] != null) c[a.medal] += 1;
+  }
+  return c;
+}
+
+/**
+ * Full cross-discipline profile for one player (for Gracze tab).
+ * @param {string} playerName
+ * @param {Record<string, any>} disciplines
+ */
+export function buildPlayerProfile(playerName, disciplines) {
+  const medals = collectPlayerMedals(playerName, disciplines);
+  return {
+    name: playerName,
+    medals,
+    medalCounts: countMedals(medals),
+    pilka: playerTeamMatchCards(playerName, disciplines.pilka),
+    siatkowka: playerTeamMatchCards(playerName, disciplines.siatkowka),
+    pilka_ind: playerSkillStanding(playerName, disciplines.pilka_ind),
+    koszykowka: playerSkillStanding(playerName, disciplines.koszykowka),
+    badminton: playerIndividualMatchCards(playerName, disciplines.badminton),
+  };
+}
+
+/**
+ * Sort players for Gracze tab: gold ↓, silver ↓, bronze ↓, then A–Z.
+ * @param {{ name: string }[]} directory
+ * @param {Record<string, any>} disciplines
+ */
+export function sortPlayersByMedals(directory, disciplines) {
+  return [...(directory || [])]
+    .map((entry) => {
+      const medals = collectPlayerMedals(entry.name, disciplines);
+      const counts = countMedals(medals);
+      return { ...entry, medals, medalCounts: counts };
+    })
+    .sort((a, b) => {
+      const ca = a.medalCounts;
+      const cb = b.medalCounts;
+      if (cb.złoty !== ca.złoty) return cb.złoty - ca.złoty;
+      if (cb.srebrny !== ca.srebrny) return cb.srebrny - ca.srebrny;
+      if (cb.brązowy !== ca.brązowy) return cb.brązowy - ca.brązowy;
+      return a.name.localeCompare(b.name, "pl", { sensitivity: "base" });
+    });
+}
+
+/**
  * Load all tournament data.
- * @returns {Promise<{ info: any, disciplines: Record<string, any>, fetchedAt: string, fromCache?: boolean, errors?: string[] }>}
+ * @returns {Promise<{ info: any, disciplines: Record<string, any>, playersDirectory: {id:string,name:string}[], fetchedAt: string, fromCache?: boolean, errors?: string[] }>}
  */
 export async function loadTournamentData() {
   const errors = [];
   /** @type {Record<string, any>} */
   const disciplines = {};
+  /** @type {{ id: string, name: string }[]} */
+  let playersDirectory = [];
   let info = {
     title: "Olimpiada Bieździadów 2026",
     paragraphs: [],
@@ -1506,13 +2130,17 @@ export async function loadTournamentData() {
       const rows = await fetchSheetRows(tab.sheet);
       if (tab.id === "info") {
         info = parseInfoSheet(rows);
+      } else if (tab.id === "gracze") {
+        playersDirectory = parsePlayersDirectory(rows);
       } else {
         disciplines[tab.id] = parseDisciplineSheet(tab.sheet, rows);
       }
     } catch (e) {
       console.error(e);
       errors.push(`${tab.label}: ${e.message || e}`);
-      if (tab.id !== "info") {
+      if (tab.id === "gracze") {
+        playersDirectory = [];
+      } else if (tab.id !== "info") {
         disciplines[tab.id] = {
           sheetName: tab.sheet,
           title: tab.label,
@@ -1528,9 +2156,31 @@ export async function loadTournamentData() {
 
   await Promise.all(tasks);
 
+  // Fallback directory from union of known players if sheet empty
+  if (!playersDirectory.length) {
+    const seen = new Set();
+    const add = (n) => {
+      const name = cellStr(n);
+      const key = normName(name);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      playersDirectory.push({ id: "", name });
+    };
+    for (const disc of Object.values(disciplines)) {
+      for (const t of disc.teams || []) {
+        for (const p of t.players || []) add(p);
+      }
+      for (const p of disc.players || []) add(p.name);
+    }
+    playersDirectory.sort((a, b) =>
+      a.name.localeCompare(b.name, "pl", { sensitivity: "base" })
+    );
+  }
+
   const payload = {
     info,
     disciplines,
+    playersDirectory,
     fetchedAt: new Date().toISOString(),
     errors: errors.length ? errors : undefined,
   };

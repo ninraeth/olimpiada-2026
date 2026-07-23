@@ -1,82 +1,102 @@
 {
+  "spreadsheetId": "18Frm47PTR0FCaZs4QoELydkQNmLQWmvU",
+  "exportedAt": "2026-07-22T19:45:47.536Z",
   "sheets": {
     "Info": [
       [
-        "Olimpiada Bieździadów 2026",
+        "Olimpiada Bieździadów 2026"
+      ],
+      [
         ""
       ],
       [
-        "Informacje o rozgrywkach",
+        "Informacje o rozgrywkach"
+      ],
+      [
         ""
       ],
       [
-        "Dyscypliny:",
+        "Dyscypliny:"
+      ],
+      [
+        "• Piłka Nożna (drużynowa i indywidualna - strzały)"
+      ],
+      [
+        "• Siatkówka (drużynowa)"
+      ],
+      [
+        "• Koszykówka (indywidualna - rzuty)"
+      ],
+      [
+        "• Badminton (indywidualny)"
+      ],
+      [
         ""
       ],
       [
-        "• Piłka Nożna (drużynowa i indywidualna - strzały)",
+        "Uwagi ogólne:"
+      ],
+      [
+        "1. Format wyniku we wszystkich meczach 1v1 / drużyna vs drużyna: X:Y"
+      ],
+      [
+        "2. Kolumny oznaczone szarym kolorem (ID_...) nie powinny być wyświetlane w aplikacji."
+      ],
+      [
+        "3. Żółte pola = pola do wpisywania danych (edytowalne)."
+      ],
+      [
+        "4. Zielone pola = wyniki."
+      ],
+      [
+        "5. Rankingi indywidualne powinny być sortowane według reguł podanych w każdej zakładce."
+      ],
+      [
+        "6. Sekcje w arkuszach oznaczane są znacznikami # DRUŻYNY, # MECZE, # RANKING, # GRACZE, # SEKCJA."
+      ],
+      [
+        "7. Aby dodać mecz lub gracza — dopisz nowy wiersz pod tabelą (nie zostawiaj pustych ID-only)."
+      ],
+      [
         ""
       ],
       [
-        "• Siatkówka (drużynowa)",
+        "data"
+      ],
+      [
+        "miejsce"
+      ],
+      [
         ""
       ],
       [
-        "• Koszykówka (indywidualna - rzuty)",
-        ""
-      ],
-      [
-        "• Badminton (indywidualny)",
-        ""
-      ],
-      [
-        "Uwagi ogólne:",
-        ""
-      ],
-      [
-        "1. Format wyniku we wszystkich meczach 1v1 / drużyna vs drużyna: X:Y",
-        ""
-      ],
-      [
-        "2. Kolumny oznaczone szarym kolorem (ID_...) nie powinny być wyświetlane w aplikacji.",
-        ""
-      ],
-      [
-        "3. Żółte pola = pola do wpisywania danych (edytowalne).",
-        ""
-      ],
-      [
-        "4. Zielone pola = wyniki.",
-        ""
-      ],
-      [
-        "5. Rankingi indywidualne powinny być sortowane według reguł podanych w każdej zakładce.",
-        ""
-      ],
-      [
-        "6. Sekcje w arkuszach oznaczane są znacznikami # DRUŻYNY, # MECZE, # RANKING, # GRACZE, # SEKCJA.",
-        ""
-      ],
-      [
-        "7. Aby dodać mecz lub gracza — dopisz nowy wiersz pod tabelą (nie zostawiaj pustych ID-only).",
-        ""
-      ],
-      [
-        "data",
-        ""
-      ],
-      [
-        "miejsce",
-        ""
-      ],
-      [
-        "Wersja szablonu: 2.1",
-        ""
+        "Wersja szablonu: 2.1"
       ]
     ],
     "Piłka Nożna": [
       [
-        "Piłka Nożna # DRUŻYNY ID_drużyny",
+        "Piłka Nożna",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# DRUŻYNY",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_drużyny",
         "Nazwa drużyny",
         "Gracze (oddzieleni przecinkiem)",
         "",
@@ -112,6 +132,20 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# MECZE",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_meczu",
         "Faza",
         "Drużyna 1",
         "Drużyna 2",
@@ -147,15 +181,101 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Format wyniku: X:Y (X = gole Drużyny 1, Y = gole Drużyny 2)",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# RANKING",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "miejsce",
         "gracz",
         "zwycięstwa / mecze (%)",
         "różnica goli",
         "uwagi"
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Sortowanie: najpierw po zwycięstwa/mecze (%) (malejąco), przy remisie po różnicy goli (malejąco).",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Różnica goli = gole strzelone przez drużyny gracza minus gole stracone.",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Ranking wypełniany ręcznie. Aplikacja pokazuje tylko wiersze z wypełnionym graczem.",
+        "",
+        "",
+        "",
+        ""
       ]
     ],
     "Siatkówka": [
       [
-        "Siatkówka # DRUŻYNY ID_drużyny",
+        "Siatkówka",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# DRUŻYNY",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_drużyny",
         "Nazwa drużyny",
         "Gracz 1",
         "Gracz 2",
@@ -206,6 +326,26 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# MECZE",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_meczu",
         "Faza",
         "Drużyna 1",
         "Drużyna 2",
@@ -266,6 +406,46 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Format wyniku: X:Y (X = wygrane sety Drużyny 1, Y = wygrane sety Drużyny 2)",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# RANKING",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "miejsce",
         "gracz",
         "zwycięstwa / mecze (%)",
         "różnica setów",
@@ -273,11 +453,111 @@
         "",
         "",
         ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Sortowanie: najpierw po zwycięstwa/mecze (%) (malejąco), przy remisie po różnicy setów (malejąco).",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Różnica setów = sety wygrane przez drużyny gracza minus sety przegrane.",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Ranking wypełniany ręcznie. Aplikacja pokazuje tylko wiersze z wypełnionym graczem.",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
       ]
     ],
     "Koszykówka": [
       [
-        "Koszykówka (rzuty) # GRACZE ID_gracza",
+        "Koszykówka (rzuty)",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# GRACZE",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_gracza",
         "Imię gracza",
         "WYNIK",
         "Próba 1 - 1P",
@@ -384,7 +664,7 @@
         "1",
         "1",
         "1",
-        "",
+        "s",
         "",
         "",
         "",
@@ -535,11 +815,112 @@
         "",
         "",
         ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* WYNIK = średnia ze wszystkich wypełnionych pól prób. Sortowanie w aplikacji po WYNIK malejąco.",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Kolumna ID_gracza (szara) — nie wyświetlać w aplikacji.",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* 1P / 2P / 3P / UK1 / UK2 = punkty z danej próby (rzuty).",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
       ]
     ],
     "Badminton": [
       [
-        "Badminton # GRACZE ID_gracza",
+        "Badminton",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# GRACZE",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_gracza",
         "Imię gracza",
         "",
         "",
@@ -589,6 +970,20 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# MECZE",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "ID_meczu",
         "Faza",
         "Gracz 1",
         "Gracz 2",
@@ -673,15 +1068,75 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# RANKING",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "miejsce",
         "gracz",
         "zwycięstwa / mecze (%)",
         "uwagi",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Format wyniku: X:Y (X = sety/punkty Gracza 1, Y = sety/punkty Gracza 2)",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "* Jeśli brak listy GRACZE — aplikacja zbierze imiona z meczów.",
+        "",
+        "",
+        "",
         ""
       ]
     ],
     "Inne": [
       [
-        "Inne konkurencje # SEKCJA | Przykładowa konkurencja miejsce",
+        "Inne konkurencje",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "# SEKCJA | Przykładowa konkurencja",
+        "",
+        "",
+        ""
+      ],
+      [
+        "miejsce",
         "uczestnik",
         "wynik",
         "uwagi"
@@ -689,6 +1144,12 @@
       [
         "1",
         "Uczestnik 1",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
         "",
         ""
       ],
@@ -703,6 +1164,12 @@
         "uczestnik",
         "wynik",
         "uwagi"
+      ],
+      [
+        "",
+        "",
+        "",
+        ""
       ],
       [
         "* Każda sekcja zaczyna się od: # SEKCJA | Nazwa konkurencji",
@@ -723,7 +1190,5 @@
         ""
       ]
     ]
-  },
-  "spreadsheetId": "18Frm47PTR0FCaZs4QoELydkQNmLQWmvU",
-  "exportedAt": "2026-07-22T19:20:53.730Z"
+  }
 }

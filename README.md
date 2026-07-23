@@ -11,9 +11,11 @@ Aplikacja pobiera arkusze z dokumentu:
 
 - ID arkusza: `18Frm47PTR0FCaZs4QoELydkQNmLQWmvU` (ustawione w `js/config.js` jako `SPREADSHEET_ID`).
 - Każda zakładka w aplikacji odpowiada arkuszu o tej samej nazwie:  
-  `Info`, `Piłka Nożna`, `Siatkówka`, `Koszykówka`, `Badminton`, `Inne`.
-- Źródło: Google Visualization API (`gviz/tq` → CSV).  
-  Gdy CORS zablokuje gviz, używany jest zapasowy endpoint [OpenSheet](https://opensheet.elk.sh/).
+  `Info`, `Gracze`, `Piłka Nożna`, `Piłka ind.`, `Siatkówka`, `Koszykówka`, `Badminton`, `Inne`.
+- Źródło (preferowane): oficjalny eksport CSV Google  
+  `export?format=csv&gid=…` (GID-y w `js/config.js` → `SHEET_GIDS`).  
+  Ten sposób **zachowuje tekst** w komórkach (np. literę `s` w koszykówce).  
+- Zapasowo: `gviz/tq` (uwaga: bywa, że gubi tekst w kolumnach liczbowych) oraz [OpenSheet](https://opensheet.elk.sh/).
 - Po udanym pobraniu dane trafiają do `localStorage` (offline / błąd sieci).
 - Auto-odświeżanie co 5 minut (oraz przycisk ↻ i powrót do karty przeglądarki).
 
@@ -108,14 +110,33 @@ Kolumny `ID_*` (szare) — tylko do edycji w Sheets, **ukryte w aplikacji**.
 Aplikacja zbiera **wszystkie kolumny po nazwie drużyny** (albo od kolumny „Gracze” w prawo).  
 Ten sam gracz w kilku drużynach → wpisz go w wierszu każdej z tych drużyn.
 
-**Siatkówka — ranking automatyczny:**  
-dla każdego gracza ze składów liczone są mecze z wynikiem `X:Y` (sety).  
-% zwycięstw = wygrane / rozegrane; różnica setów = sety zdobyte − stracone (perspektywa drużyny gracza).  
+**Siatkówka / Piłka Nożna — ranking automatyczny:**  
+dla każdego gracza ze składów liczone są mecze z wynikiem `X:Y`  
+(Siatkówka = sety, Piłka = gole).  
+% zwycięstw = wygrane / rozegrane; różnica = zdobyte − stracone (perspektywa drużyny gracza).  
 Gracz w **kilku drużynach** — sumowane mecze wszystkich jego drużyn.  
 W **obu** składach jednego meczu — mecz liczy się **dwa razy**.  
-Sortowanie: % zwycięstw ↓, potem różnica setów ↓.  
+Sortowanie: % zwycięstw ↓, potem różnica setów/goli ↓.  
 
 **Wynik meczu:** format `X:Y` jako **tekst** (żeby Sheets nie zamienił na godzinę).
+
+### Strefa medalowa (każda dyscyplina)
+
+Na końcu arkusza i zakładki:
+
+```
+# STREFA MEDALOWA
+medal,nazwa,gracze
+złoty,,
+srebrny,,
+brązowy,,
+```
+
+- `nazwa` — gracz lub drużyna (wpisywane ręcznie)
+- `gracze` — opcjonalny skład drużyny (po przecinku)
+- Aplikacja pokazuje podium 🥇🥈🥉 na dole każdej zakładki dyscypliny.
+
+Skrypt: `python scripts/add_medal_zones.py` (dopisuje sekcję do lokalnego xlsx z aktualnego Google).
 
 ### Koszykówka
 
@@ -124,16 +145,19 @@ Sortowanie: % zwycięstw ↓, potem różnica setów ↓.
 Kolumny prób: `Próba N - 1P`, `Próba N - 2P`, `Próba N - 3P`, `Próba N - UK1`, `Próba N - UK2`  
 (można dodać więcej niż 3 próby — wystarczy dopisać kolejne kolumny w tym samym formacie).
 
-**Wynik w aplikacji** (nie zwykła średnia ze wszystkich komórek):
-1. Dla każdej wypełnionej próby: średnia z wypełnionych pól `1P…UK2`
+**Wynik w aplikacji** (nie zwykła średnia ze wszystkich komórek) — tak samo **Piłka ind.**:
+1. Dla każdej wypełnionej próby: średnia z pól kategorii tej próby  
+   - Koszykówka: `1P, 2P, 3P, UK1, UK2`  
+   - Piłka ind.: `Karne, 1na1, Luta`
 2. Jedna próba → ta średnia jest wynikiem
 3. Dwie lub więcej → **50%** średnia najlepszej próby + **50%** średnia ze średnich pozostałych prób
 
-**Litera `S` / `s` w komórce próby** (np. `Próba 1 - 3P`):
-w obliczeniach zastępowana liczbą: **50%** × najgorszy (minimalny) wynik tego typu rzutu (`3P` itd.) ze **wszystkich prób wszystkich graczy** + **50%** × średnia wszystkich wyników tego typu.  
-Inne komórki `S` nie wchodzą do puli (liczą się tylko realne liczby).
+**Litera `S` / `s` w komórce próby** (np. `Próba 1 - 3P` / `Próba 1 - Karne`):
+w obliczeniach: **50%** × najgorszy wynik tego typu ze **wszystkich prób wszystkich graczy** + **50%** × średnia tego typu.  
+Inne komórki `S` nie wchodzą do puli.
 
-Kolumna **WYNIK** w arkuszu jest opcjonalna (aplikacja liczy wynik z prób).
+Kolumna **WYNIK** w arkuszu jest opcjonalna (aplikacja liczy wynik z prób).  
+Źródło: preferowany eksport CSV (`SHEET_GIDS` w `config.js`) — zachowuje literę `s`.
 
 ### Badminton
 

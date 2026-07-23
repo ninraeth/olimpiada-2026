@@ -18,8 +18,10 @@ const state = {
   loading: false,
   error: null,
   refreshTimer: null,
-  /** @type {Set<string>} */
-  expandedBasketball: new Set(),
+  /** @type {Set<string>} expanded skill-attempt rows (Koszykówka / Piłka ind.) */
+  expandedAttempts: new Set(),
+  /** @type {string|null} single expanded player on Gracze tab */
+  expandedGracz: null,
 };
 
 const els = {
@@ -78,11 +80,13 @@ function render() {
     els.content.innerHTML = renderInfo(state.data);
   } else {
     els.content.innerHTML = renderDiscipline(state.activeTab, state.data, {
-      expandedBasketball: state.expandedBasketball,
+      expandedAttempts: state.expandedAttempts,
+      expandedGracz: state.expandedGracz,
     });
   }
 
-  bindBasketballToggles();
+  bindAttemptToggles();
+  bindGraczToggles();
 
   if (els.refreshBtn) {
     els.refreshBtn.disabled = state.loading;
@@ -90,16 +94,16 @@ function render() {
   }
 }
 
-function bindBasketballToggles() {
+function bindAttemptToggles() {
   if (!els.content) return;
   els.content.querySelectorAll("[data-toggle-player]").forEach((el) => {
     const name = el.getAttribute("data-toggle-player");
     if (!name) return;
     const toggle = () => {
-      if (state.expandedBasketball.has(name)) {
-        state.expandedBasketball.delete(name);
+      if (state.expandedAttempts.has(name)) {
+        state.expandedAttempts.delete(name);
       } else {
-        state.expandedBasketball.add(name);
+        state.expandedAttempts.add(name);
       }
       render();
     };
@@ -112,6 +116,21 @@ function bindBasketballToggles() {
         e.preventDefault();
         toggle();
       }
+    });
+  });
+}
+
+function bindGraczToggles() {
+  if (!els.content) return;
+  els.content.querySelectorAll("[data-toggle-gracz]").forEach((el) => {
+    const name = el.getAttribute("data-toggle-gracz");
+    if (!name) return;
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      // Only one player expanded at a time
+      state.expandedGracz =
+        state.expandedGracz === name ? null : name;
+      render();
     });
   });
 }
