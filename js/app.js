@@ -229,10 +229,17 @@ function openNewspaperFullscreen(paper) {
 }
 
 /**
- * Swipe-to-dismiss + click (tab or newspaper fullscreen).
+ * Swipe-to-dismiss + tap-to-open (tab or newspaper fullscreen).
+ * Vertical scroll must NOT open the discipline — only a short, nearly
+ * stationary tap (or an unambiguous click without drag).
  */
 function bindNotificationSwipe() {
   if (!els.content) return;
+
+  const TAP_SLOP_PX = 14;
+  const AXIS_LOCK_PX = 8;
+  const DISMISS_PX = 96;
+
   els.content.querySelectorAll("[data-swipe-notif]").forEach((card) => {
     const id = card.getAttribute("data-notif-id");
     if (!id) return;
@@ -242,14 +249,19 @@ function bindNotificationSwipe() {
     let startX = 0;
     let startY = 0;
     let dx = 0;
+    let dy = 0;
+    /** @type {boolean} still handling this pointer for horizontal swipe UI */
     let tracking = false;
-    let horizontal = null;
-    let didSwipe = false;
+    /** @type {null|'h'|'v'} */
+    let axis = null;
+    /** true if finger/pointer moved beyond tap slop */
+    let moved = false;
+    /** block synthetic click after scroll / swipe */
+    let suppressClick = false;
 
     const inner = card.querySelector(".notif-card-inner") || card;
 
     const activate = () => {
-      if (didSwipe) return;
       if (isNewspaper) {
         const n = state.notifications.find((x) => x.id === id);
         if (n?.newspaper) openNewspaperFullscreen(n.newspaper);
@@ -258,43 +270,55 @@ function bindNotificationSwipe() {
       if (tabId) switchTab(tabId);
     };
 
+    const resetVisual = () => {
+      inner.style.transform = "";
+      inner.style.opacity = "";
+    };
+
     const onStart = (clientX, clientY) => {
       startX = clientX;
       startY = clientY;
       dx = 0;
+      dy = 0;
       tracking = true;
-      horizontal = null;
-      didSwipe = false;
+      axis = null;
+      moved = false;
+      suppressClick = false;
       inner.style.transition = "none";
     };
 
     const onMove = (clientX, clientY) => {
-      if (!tracking) return;
-      const mx = clientX - startX;
-      const my = clientY - startY;
-      if (horizontal == null) {
-        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
-        horizontal = Math.abs(mx) > Math.abs(my);
-        if (!horizontal) {
+      dx = clientX - startX;
+      dy = clientY - startY;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > TAP_SLOP_PX) moved = true;
+
+      if (!tracking && axis !== "h") return;
+
+      if (axis == null && dist > AXIS_LOCK_PX) {
+        axis = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+        if (axis === "v") {
+          // Page scroll — drop card gesture, allow browser to scroll
           tracking = false;
+          resetVisual();
+          suppressClick = true;
           return;
         }
       }
-      if (!horizontal) return;
-      dx = mx;
-      if (Math.abs(dx) > 12) didSwipe = true;
+
+      if (axis !== "h" || !tracking) return;
+
       inner.style.transform = `translateX(${dx}px)`;
       inner.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / 220));
     };
 
     const onEnd = () => {
-      if (!tracking && horizontal == null) {
-        return;
-      }
-      tracking = false;
       inner.style.transition = "transform 0.22s ease, opacity 0.22s ease";
-      if (Math.abs(dx) > 96) {
-        didSwipe = true;
+
+      if (axis === "h" && Math.abs(dx) > DISMISS_PX) {
+        suppressClick = true;
+        moved = true;
         const dir = dx > 0 ? 1 : -1;
         inner.style.transform = `translateX(${dir * 120}vw)`;
         inner.style.opacity = "0";
@@ -304,14 +328,15 @@ function bindNotificationSwipe() {
           else if (state.optionsOpen) refreshOptionsModal();
         }, 200);
       } else {
-        inner.style.transform = "";
-        inner.style.opacity = "";
-        if (!didSwipe && Math.abs(dx) < 12) {
-          activate();
-        }
+        resetVisual();
+        // Any real movement (incl. vertical scroll) is not a tap
+        if (moved || axis === "v") suppressClick = true;
       }
+
+      tracking = false;
+      axis = null;
       dx = 0;
-      horizontal = null;
+      dy = 0;
     };
 
     card.addEventListener(
@@ -327,17 +352,26 @@ function bindNotificationSwipe() {
       (e) => {
         const t = e.changedTouches[0];
         if (!t) return;
-        if (horizontal) e.preventDefault();
+        // Only prevent default while locked to horizontal swipe (dismiss)
+        if (axis === "h" && tracking) e.preventDefault();
         onMove(t.clientX, t.clientY);
       },
       { passive: false }
     );
     card.addEventListener("touchend", onEnd);
-    card.addEventListener("touchcancel", onEnd);
+    card.addEventListener("touchcancel", () => {
+      moved = true;
+      suppressClick = true;
+      onEnd();
+    });
 
+    // Activate only on real tap/click — never on touchend after scroll
     card.addEventListener("click", (e) => {
-      if (didSwipe) {
+      if (suppressClick || moved) {
         e.preventDefault();
+        e.stopPropagation();
+        suppressClick = false;
+        moved = false;
         return;
       }
       activate();

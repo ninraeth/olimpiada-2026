@@ -8,7 +8,10 @@
  * Skips silently when text template or background file is missing.
  */
 
-import { NEWSPAPER_TEXT_USAGE_KEY } from "./config.js";
+import {
+  NEWSPAPER_TEXT_USAGE_KEY,
+  NEWSPAPER_BG_USAGE_KEY,
+} from "./config.js";
 import { parseMatchScore } from "./data.js";
 import { newspaperTexts } from "./newspaperTexts.js";
 import {
@@ -133,15 +136,57 @@ export function isDominantIndividual(players) {
 }
 
 /**
- * @param {string} bgKey
+ * Normalize a background entry to a filename present in data/ if possible.
+ * Accepts "targi", "targi.jpg", "data/targi.jpg".
+ * @param {unknown} raw
+ * @returns {string|null} e.g. "targi.jpg"
+ */
+export function normalizeBackgroundFile(raw) {
+  let s = cellStr(raw);
+  if (!s || s === "...") return null;
+  s = s.replace(/^.*[\\/]/, ""); // strip path
+  if (!s) return null;
+  // Allow stem without extension
+  if (!/\.[a-z0-9]+$/i.test(s)) {
+    const withJpg = `${s}.jpg`;
+    if (AVAILABLE_BG.has(withJpg)) return withJpg;
+    // try other known extensions from AVAILABLE_BG
+    for (const f of AVAILABLE_BG) {
+      if (f.replace(/\.[^.]+$/, "") === s) return f;
+    }
+    return null;
+  }
+  if (AVAILABLE_BG.has(s)) return s;
+  return null;
+}
+
+/**
+ * Resolve background for an event key.
+ * Value in newspaperBackgrounds may be:
+ *   - string: "targi.jpg" or "targi"
+ *   - array:  ["targi", "rzecz"] — pick next unused in order (localStorage)
+ * Missing / "..." / unknown files → null (skip newspaper).
+ *
+ * @param {string} bgKey e.g. "badminton_semi_close"
  * @returns {string|null} relative URL data/…
  */
 export function resolveBackgroundUrl(bgKey) {
-  const file = newspaperBackgrounds[bgKey];
-  if (!file || file === "..." || !cellStr(file)) return null;
-  const base = file.replace(/^.*[\\/]/, "");
-  if (!AVAILABLE_BG.has(base)) return null;
-  return `data/${base}`;
+  const entry = newspaperBackgrounds[bgKey];
+  if (entry == null) return null;
+
+  /** @type {string[]} */
+  let candidates = [];
+  if (Array.isArray(entry)) {
+    candidates = entry.map((x) => normalizeBackgroundFile(x)).filter(Boolean);
+  } else {
+    const one = normalizeBackgroundFile(entry);
+    if (one) candidates = [one];
+  }
+  if (!candidates.length) return null;
+
+  // Sequential rotation per bgKey (same idea as text pools)
+  const picked = pickSequential(NEWSPAPER_BG_USAGE_KEY, `bg:${bgKey}`, candidates);
+  return picked ? `data/${picked}` : null;
 }
 
 /**
@@ -193,10 +238,13 @@ export function backgroundKeyFor(discKey, stage, dominant) {
   return `${discKey}_semi_${dominant ? "dominant" : "close"}`;
 }
 
-/** @returns {Record<string, number>} poolKey → next index */
-function loadTextUsage() {
+/**
+ * @param {string} storageKey
+ * @returns {Record<string, number>} poolKey → next index
+ */
+function loadUsageMap(storageKey) {
   try {
-    const raw = localStorage.getItem(NEWSPAPER_TEXT_USAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : {};
@@ -205,18 +253,41 @@ function loadTextUsage() {
   }
 }
 
-/** @param {Record<string, number>} state */
-function saveTextUsage(state) {
+/**
+ * @param {string} storageKey
+ * @param {Record<string, number>} state
+ */
+function saveUsageMap(storageKey, state) {
   try {
-    localStorage.setItem(NEWSPAPER_TEXT_USAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(storageKey, JSON.stringify(state));
   } catch {
     /* quota */
   }
 }
 
 /**
+ * Take next item in order for a named pool; wrap when exhausted.
+ * Progress is stored in localStorage under storageKey.
+ *
+ * @param {string} storageKey localStorage key for the usage map
+ * @param {string} poolKey e.g. "pilkaNozna.close" or "bg:badminton_semi_close"
+ * @param {string[]} items non-empty candidates (already filtered)
+ * @returns {string|null}
+ */
+export function pickSequential(storageKey, poolKey, items) {
+  if (!items?.length) return null;
+  const state = loadUsageMap(storageKey);
+  let idx = Number(state[poolKey]);
+  if (!Number.isFinite(idx) || idx < 0) idx = 0;
+  idx = idx % items.length;
+  const value = items[idx];
+  state[poolKey] = (idx + 1) % items.length;
+  saveUsageMap(storageKey, state);
+  return value;
+}
+
+/**
  * Take next unused template in order for this pool; wrap when exhausted.
- * Progress is stored in localStorage so it survives reloads.
  *
  * @param {string} poolKey e.g. "pilkaNozna.close"
  * @param {string[]|null|undefined} arr
@@ -226,16 +297,7 @@ export function pickTemplate(poolKey, arr) {
   if (!arr?.length) return null;
   const usable = arr.map((t) => cellStr(t)).filter(Boolean);
   if (!usable.length) return null;
-
-  const state = loadTextUsage();
-  let idx = Number(state[poolKey]);
-  if (!Number.isFinite(idx) || idx < 0) idx = 0;
-  idx = idx % usable.length;
-
-  const text = usable[idx];
-  state[poolKey] = (idx + 1) % usable.length;
-  saveTextUsage(state);
-  return text;
+  return pickSequential(NEWSPAPER_TEXT_USAGE_KEY, poolKey, usable);
 }
 
 /**

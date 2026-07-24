@@ -26,6 +26,7 @@ const {
   detectNewspaperEvents,
   pickTemplate,
   textPoolKey,
+  normalizeBackgroundFile,
 } = await import(pathToFileURL(path.join(root, "js/newspaper.js")).href);
 
 function assert(c, m) {
@@ -80,6 +81,26 @@ assert(
   backgroundKeyFor("pilkaNozna", "semi", true) === "pilkaNozna_semi_dominant",
   "bg key"
 );
+
+// Array backgrounds: sequential + stem without .jpg
+const { newspaperBackgrounds } = await import(
+  pathToFileURL(path.join(root, "js/newspaperBackgrounds.js")).href
+);
+assert(normalizeBackgroundFile("targi") === "targi.jpg", "stem→jpg");
+assert(normalizeBackgroundFile("rzecz.jpg") === "rzecz.jpg", "full name");
+assert(normalizeBackgroundFile("nope") == null, "unknown stem");
+
+// Temporarily inject array entry for sequential bg test
+newspaperBackgrounds.__test_array_bg = ["targi", "rzecz"];
+// clear only bg usage if mixed with text tests — full clear is fine
+_store.clear();
+const b1 = resolveBackgroundUrl("__test_array_bg");
+const b2 = resolveBackgroundUrl("__test_array_bg");
+const b3 = resolveBackgroundUrl("__test_array_bg");
+assert(b1 === "data/targi.jpg", "bg seq 1");
+assert(b2 === "data/rzecz.jpg", "bg seq 2");
+assert(b3 === "data/targi.jpg", "bg seq wrap");
+delete newspaperBackgrounds.__test_array_bg;
 
 // Detect final match newspaper when bg+text exist
 const prev = { matches: {}, leaders: {}, golds: {}, v: 1 };
