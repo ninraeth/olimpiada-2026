@@ -1312,37 +1312,34 @@ a {
   gap: 0;
   align-items: stretch;
   /* override .notif-card-inner solid fill so the scan shows */
-  background-color: #f3ead2 !important;
+  background-color: #e8dfc8 !important;
   background-image: none; /* replaced by inline style when present */
   background-repeat: no-repeat !important;
   background-position: top center !important;
   background-size: 100% auto !important;
   border: 1px solid rgba(60, 45, 20, 0.35);
   border-radius: 8px;
-  box-shadow:
-    0 4px 18px rgba(0, 0, 0, 0.35),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  /* room for masthead + article */
-  min-height: 520px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  /* height follows content (masthead offset + text) — no forced tall box */
+  height: auto;
+  min-height: 0;
   padding: 0 !important;
   overflow: hidden;
   color: #1c1914;
 }
 
-/* Keep masthead free; article starts ~320px from top of scan */
+/*
+ * Masthead of the scan is free (~top 310px).
+ * Text is top-aligned from 320px; card ends after the text.
+ * No extra paper/vignette overlay — the scan is the page.
+ */
 .newspaper-card-content {
   position: relative;
   z-index: 1;
   margin: 0;
-  padding: 320px 1.05rem 1.15rem;
-  /* subtle paper veil only under the text (not the logo zone) */
-  background: linear-gradient(
-    to bottom,
-    rgba(243, 234, 210, 0) 0,
-    rgba(243, 234, 210, 0.55) 28px,
-    rgba(248, 241, 220, 0.9) 70px,
-    rgba(250, 244, 228, 0.94) 100%
-  );
+  padding: 320px 1.05rem 1rem;
+  background: none;
+  display: block;
 }
 
 .newspaper-headline {
@@ -1501,13 +1498,13 @@ body.newspaper-fs-open {
   position: relative;
   z-index: 1;
   width: min(480px, 100%);
-  min-height: min(88vh, 860px);
+  height: auto;
   max-height: 94vh;
   overflow: auto;
   border-radius: 10px;
   border: 1px solid rgba(60, 45, 20, 0.4);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  background-color: #f3ead2;
+  background-color: #e8dfc8;
   background-repeat: no-repeat;
   background-position: top center;
   background-size: 100% auto;
@@ -1519,20 +1516,14 @@ body.newspaper-fs-open {
   position: relative;
   z-index: 1;
   display: block;
-  min-height: inherit;
-  /* same masthead clearance as list cards */
-  padding: 320px 1.2rem 1.4rem;
-  background: linear-gradient(
-    to bottom,
-    rgba(243, 234, 210, 0) 0,
-    rgba(243, 234, 210, 0.55) 28px,
-    rgba(248, 241, 220, 0.92) 80px,
-    rgba(250, 244, 228, 0.96) 100%
-  );
+  min-height: 0;
+  /* top-aligned under masthead; sheet ends after text */
+  padding: 320px 1.2rem 1.15rem;
+  background: none;
 }
 
 .newspaper-fs-hint {
-  margin: 1.1rem 0 0;
+  margin: 0.85rem 0 0;
   font-size: 0.72rem;
   font-family: Georgia, serif;
   font-style: italic;

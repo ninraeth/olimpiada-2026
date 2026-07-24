@@ -27,7 +27,7 @@ To nie był mecz. To była egzekucja. #wygrany rozjechali #przegrany #wynik i na
     ],
     finalClose: [
       `[[PIŁKARSKI TEATR MARZEŃ]]
-Na tej skromnej bieździadowskiej łące rozegrał się dzisiaj dramat Szekspira w trampkach. Mrożące krew w żyłach sceny, o których nastepne pokolenia będą opowiadać przy ognisku w Halloween. Niczym pojedynek nieśmiertelnych tytanów, w którym żaden nie był gotowy odpuścić i z każdym przyjętym ciosem, straconym golem, stawał się jeszcze mocniejszy i bardziej rozjuszony. Wraz z ostatnim gwizdkiem ryk zwycięskich #wygrany był słyszalny aż w Jarocinie, a smak złota unosił się w powietrzu. Heroiczne zwycięstwo wynikiem #wynik pokazuje, że #przegrany też dali z siebie wszystko i zasłużyli na srebro. Bieździadów stał się dziś centrum piłkarskiego wszechświata.`,
+Na tej skromnej bieździadowskiej łące rozegrał się dzisiaj dramat Szekspira w trampkach. Mrożące krew w żyłach sceny, o których nastepne pokolenia będą opowiadać przy ognisku w Halloween. Niczym pojedynek nieśmiertelnych tytanów, w którym żaden nie był gotowy odpuścić i z każdym przyjętym ciosem, straconym golem, stawał się jeszcze mocniejszy i bardziej rozjuszony. Wraz z ostatnim gwizdkiem ryk zwycięskich #wygrany był słyszalny aż w Jarocinie, a smak złota unosił się w powietrzu. Heroiczne zwycięstwo wynikiem #wynik pokazuje, że #przegrany też dali z siebie wszystko i zasłużyli na srebro. Bieździadów stał się dziś centrum piłkarskiego wszechświata. Nowi mistrzowie wszechświata to: #skladzloto`,
     ],
     finalDominant: ["Przykładowy tekst"],
   },
