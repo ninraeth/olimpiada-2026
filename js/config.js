@@ -55,6 +55,9 @@ export const NEWSPAPER_TEXT_USAGE_KEY = "olimpiada2026_newspaper_text_usage_v1";
 /** localStorage: next newspaper background index per bg key */
 export const NEWSPAPER_BG_USAGE_KEY = "olimpiada2026_newspaper_bg_usage_v1";
 
+/** localStorage: which newspaper stories already emitted (idempotent) */
+export const NEWSPAPER_FIRED_KEY = "olimpiada2026_newspaper_fired_v1";
+
 /**
  * Gold-medal celebration sounds available in Options.
  * `url: null` = built-in Web Audio chime ("Domyślny").

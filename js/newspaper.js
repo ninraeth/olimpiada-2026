@@ -11,6 +11,7 @@
 import {
   NEWSPAPER_TEXT_USAGE_KEY,
   NEWSPAPER_BG_USAGE_KEY,
+  NEWSPAPER_FIRED_KEY,
 } from "./config.js";
 import { parseMatchScore } from "./data.js";
 import { newspaperTexts } from "./newspaperTexts.js";
@@ -186,7 +187,8 @@ export function resolveBackgroundUrl(bgKey) {
 
   // Sequential rotation per bgKey (same idea as text pools)
   const picked = pickSequential(NEWSPAPER_BG_USAGE_KEY, `bg:${bgKey}`, candidates);
-  return picked ? `data/${picked}` : null;
+  // Leading "./" keeps url() stable relative to the app root
+  return picked ? `./data/${picked}` : null;
 }
 
 /**
@@ -443,107 +445,173 @@ function buildNewspaperEvent(opts) {
   };
 }
 
+/** @returns {Set<string>} */
+function loadNewspaperFired() {
+  try {
+    const raw = localStorage.getItem(NEWSPAPER_FIRED_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** @param {Set<string>} set */
+function saveNewspaperFired(set) {
+  try {
+    localStorage.setItem(NEWSPAPER_FIRED_KEY, JSON.stringify([...set]));
+  } catch {
+    /* quota */
+  }
+}
+
 /**
- * Detect newspaper events from snapshot diff (same prev/next as regular).
+ * Detect newspaper events for knockout results / medal announcements.
+ *
+ * Unlike regular notifications (diff-only), newspapers use a dedicated
+ * "already told" set so stories still appear for results that were already
+ * in the snapshot when the newspaper feature was added.
+ *
+ * First app session (no prev snapshot yet) only baselines — no spam.
+ *
  * @param {object|null} prev
  * @param {object} next
  * @param {any} data
  * @returns {import('./notifications.js').DetectedEvent[]}
  */
 export function detectNewspaperEvents(prev, next, data) {
+  // Wait until regular system has baselined once
   if (!prev || !next) return [];
+
   /** @type {any[]} */
   const events = [];
   const disciplines = data?.disciplines || {};
+  const fired = loadNewspaperFired();
+  let dirty = false;
+
+  const mark = (id) => {
+    if (fired.has(id)) return false;
+    fired.add(id);
+    dirty = true;
+    return true;
+  };
 
   // ── Team + badminton knockout matches ────────────────────────
   const matchTabs = ["pilka", "siatkowka", "badminton"];
-  const prevMatches = prev.matches || {};
-  const nextMatches = next.matches || {};
 
-  for (const [key, score] of Object.entries(nextMatches)) {
-    if (!score || prevMatches[key]) continue; // only brand-new results
-    const [tabId, , , , idxStr] = key.split("|");
-    if (!matchTabs.includes(tabId)) continue;
+  for (const tabId of matchTabs) {
     const discKey = DISC_KEY[tabId];
-    if (!discKey) continue;
-
     const disc = disciplines[tabId];
-    const idx = Number(idxStr);
-    const m = disc?.matches?.[idx];
-    if (!m) continue;
+    if (!discKey || !disc?.matches?.length) continue;
 
-    const stage = classifyMatchStage(m.phase);
-    if (!stage) continue;
+    disc.matches.forEach((m, idx) => {
+      const score = cellStr(m.score);
+      if (!score) return;
 
-    const dominantFlag = isDominantVictory(tabId, score);
-    if (dominantFlag == null) continue;
-    const dominant = dominantFlag;
+      const stage = classifyMatchStage(m.phase);
+      if (!stage) return;
 
-    const { winner, loser } = sidesFromScore(m.side1, m.side2, score);
-    const finals = finalistsFromMatches(disc.matches || []);
-    const bronze = thirdPlaceWinner(disc.matches || []);
+      const paperId = [
+        "match",
+        tabId,
+        String(idx),
+        normKey(m.phase),
+        normKey(m.side1),
+        normKey(m.side2),
+        score,
+      ].join("|");
+      if (!mark(paperId)) return;
 
-    let zloty = "";
-    let srebrny = "";
-    let brazowy = bronze;
-    let skladzloto = "";
-
-    if (stage === "final") {
-      zloty = winner;
-      srebrny = loser;
-      skladzloto = rosterForTeam(disc.teams, winner);
-    } else {
-      zloty = finals.gold;
-      srebrny = finals.silver;
-      if (finals.gold) {
-        skladzloto = rosterForTeam(disc.teams, finals.gold);
+      const dominantFlag = isDominantVictory(tabId, score);
+      if (dominantFlag == null) {
+        // Unparseable score — don't keep the id blocked forever
+        fired.delete(paperId);
+        dirty = true;
+        return;
       }
-    }
-    if (stage === "third") {
-      brazowy = winner;
-    }
+      const dominant = dominantFlag;
 
-    const placeholders = {
-      "#wygrany": winner || "",
-      "#przegrany": loser || "",
-      "#wynik": cellStr(score),
-      "#zloty": zloty,
-      "#srebrny": srebrny,
-      "#brazowy": brazowy,
-      "#skladzloto": skladzloto,
-    };
+      const { winner, loser } = sidesFromScore(m.side1, m.side2, score);
+      const finals = finalistsFromMatches(disc.matches || []);
+      const bronze = thirdPlaceWinner(disc.matches || []);
 
-    const ev = buildNewspaperEvent({
-      discKey,
-      stage,
-      dominant,
-      placeholders,
-      tabId,
-      disciplineLabel: disc?.title || tabId,
+      let zloty = "";
+      let srebrny = "";
+      let brazowy = bronze;
+      let skladzloto = "";
+
+      if (stage === "final") {
+        zloty = winner;
+        srebrny = loser;
+        skladzloto = rosterForTeam(disc.teams, winner);
+      } else {
+        zloty = finals.gold;
+        srebrny = finals.silver;
+        if (finals.gold) {
+          skladzloto = rosterForTeam(disc.teams, finals.gold);
+        }
+      }
+      if (stage === "third") {
+        brazowy = winner;
+      }
+
+      const placeholders = {
+        "#wygrany": winner || "",
+        "#przegrany": loser || "",
+        "#wynik": score,
+        "#zloty": zloty,
+        "#srebrny": srebrny,
+        "#brazowy": brazowy,
+        "#skladzloto": skladzloto,
+      };
+
+      const ev = buildNewspaperEvent({
+        discKey,
+        stage,
+        dominant,
+        placeholders,
+        tabId,
+        disciplineLabel: disc?.title || tabId,
+      });
+      if (ev) {
+        events.push(ev);
+      } else {
+        // Missing text/bg — allow retry later when config is filled
+        fired.delete(paperId);
+        dirty = true;
+      }
     });
-    if (ev) events.push(ev);
   }
 
   // ── Individual medal announcements ───────────────────────────
   for (const tabId of ["koszykowka", "pilka_ind"]) {
     const discKey = DISC_KEY[tabId];
-    const goldKey = `${tabId}::`;
-    const prevGold = cellStr(prev.golds?.[goldKey] || "");
-    const nextGold = cellStr(next.golds?.[goldKey] || "");
-    if (!nextGold || normKey(prevGold) === normKey(nextGold)) continue;
-
     const disc = disciplines[tabId];
-    const medals = disc?.medals || [];
-    const dominantFlag = isDominantIndividual(disc?.players || []);
-    if (dominantFlag == null) continue;
+    if (!discKey || !disc) continue;
+
+    const gold =
+      medalName(disc.medals || [], "złoty") ||
+      cellStr(next.golds?.[`${tabId}::`] || "");
+    if (!gold) continue;
+
+    const paperId = `gold|${tabId}|${normKey(gold)}`;
+    if (!mark(paperId)) continue;
+
+    const medals = disc.medals || [];
+    const dominantFlag = isDominantIndividual(disc.players || []);
+    if (dominantFlag == null) {
+      fired.delete(paperId);
+      dirty = true;
+      continue;
+    }
     const dominant = dominantFlag;
 
     const placeholders = {
-      "#wygrany": nextGold,
+      "#wygrany": gold,
       "#przegrany": medalName(medals, "srebrny"),
       "#wynik": "",
-      "#zloty": medalName(medals, "złoty") || nextGold,
+      "#zloty": medalName(medals, "złoty") || gold,
       "#srebrny": medalName(medals, "srebrny"),
       "#brazowy": medalName(medals, "brązowy"),
       "#skladzloto": "",
@@ -557,8 +625,14 @@ export function detectNewspaperEvents(prev, next, data) {
       tabId,
       disciplineLabel: disc?.title || tabId,
     });
-    if (ev) events.push(ev);
+    if (ev) {
+      events.push(ev);
+    } else {
+      fired.delete(paperId);
+      dirty = true;
+    }
   }
 
+  if (dirty) saveNewspaperFired(fired);
   return events;
 }
