@@ -476,6 +476,9 @@ function notificationIcon(type) {
   return "🔔";
 }
 
+/** Original-image Y offset (px) where article text may start */
+export const NEWSPAPER_MASTHEAD_PX = 320;
+
 /**
  * Stable pseudo-random style for a newspaper card (from id).
  * @param {string} id
@@ -483,7 +486,8 @@ function notificationIcon(type) {
  */
 function newspaperLook(id) {
   const fonts = ["playfair", "libre", "merriweather", "newsreader", "elite"];
-  const inks = ["ink", "crimson", "navy", "umber", "slate"];
+  // tabloid = loud printer red
+  const inks = ["ink", "crimson", "tabloid", "navy", "umber", "slate"];
   let h = 0;
   const s = String(id || "x");
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
@@ -491,13 +495,12 @@ function newspaperLook(id) {
   return {
     font: fonts[a % fonts.length],
     ink: inks[(a >>> 3) % inks.length],
-    // slight rotation of "columns" feel
     align: a % 5 === 0 ? "ragged" : "justify",
   };
 }
 
 /**
- * Normalize bg path for CSS url() — absolute from app root.
+ * Normalize bg path for img src — relative to app root.
  * @param {string} bg
  */
 function newspaperBgUrl(bg) {
@@ -509,8 +512,101 @@ function newspaperBgUrl(bg) {
 }
 
 /**
- * Large newspaper card (background + headline/body).
- * Masthead of scan occupies ~top 310px — copy starts below (~320px).
+ * Shrink headline/body fonts until content fits in the overlay box.
+ * @param {HTMLElement} content
+ */
+function fitNewspaperText(content) {
+  const headline = content.querySelector(".newspaper-headline");
+  const body = content.querySelector(".newspaper-body");
+  const time = content.querySelector(".newspaper-time");
+  const hint = content.querySelector(".newspaper-fs-hint");
+  const maxH = content.clientHeight;
+  if (!maxH || maxH < 8) return;
+
+  let bodySize = Math.min(15, maxH / 18);
+  let headSize = Math.min(22, maxH / 10);
+  const minBody = 7.5;
+  const minHead = 10;
+
+  const apply = () => {
+    if (headline) {
+      headline.style.fontSize = `${headSize}px`;
+      headline.style.marginBottom = `${Math.max(4, headSize * 0.28)}px`;
+    }
+    if (body) {
+      body.style.fontSize = `${bodySize}px`;
+      body.style.lineHeight = "1.45";
+    }
+    if (time) time.style.fontSize = `${Math.max(7, bodySize * 0.72)}px`;
+    if (hint) hint.style.fontSize = `${Math.max(7, bodySize * 0.68)}px`;
+  };
+
+  apply();
+  for (let i = 0; i < 48; i++) {
+    if (content.scrollHeight <= maxH + 1) break;
+    if (bodySize > minBody) bodySize -= 0.4;
+    else if (headSize > minHead) headSize -= 0.4;
+    else break;
+    apply();
+  }
+}
+
+/**
+ * Position text at 320px of the *original* image (scaled) and fit type
+ * inside the remaining scan area — no beige extension below the image.
+ * @param {ParentNode} [root]
+ */
+export function layoutNewspaperElements(root = document) {
+  const nodes = root.querySelectorAll("[data-newspaper-layout]");
+  nodes.forEach((card) => {
+    const img = card.querySelector("img.newspaper-scan");
+    const content = card.querySelector("[data-newspaper-copy]");
+    if (!img || !content) return;
+
+    const apply = () => {
+      const nw = img.naturalWidth || 0;
+      const nh = img.naturalHeight || 0;
+      if (!nw || !nh) return;
+
+      const dw = img.clientWidth || card.clientWidth;
+      if (!dw) return;
+      const scale = dw / nw;
+      const dh = nh * scale;
+      const top = Math.round(NEWSPAPER_MASTHEAD_PX * scale);
+      const side = Math.max(8, Math.round(12 * scale));
+      const bottom = Math.max(6, Math.round(10 * scale));
+      const boxH = Math.max(24, Math.round(dh - top - bottom));
+
+      content.style.top = `${top}px`;
+      content.style.left = "0";
+      content.style.right = "0";
+      content.style.height = `${boxH}px`;
+      content.style.maxHeight = `${boxH}px`;
+      content.style.padding = `0 ${side}px ${bottom}px`;
+      content.style.overflow = "hidden";
+
+      // Ensure card height = image only (no extra fill)
+      card.style.height = `${Math.round(dh)}px`;
+
+      fitNewspaperText(content);
+    };
+
+    if (img.complete && img.naturalWidth) {
+      // next frame so layout width is settled
+      requestAnimationFrame(apply);
+    } else {
+      img.addEventListener(
+        "load",
+        () => requestAnimationFrame(apply),
+        { once: true }
+      );
+    }
+  });
+}
+
+/**
+ * Large newspaper card: real <img> scan + absolutely positioned copy.
+ * Text starts at 320px of original image (scaled with the scan).
  * @param {import('./notifications.js').AppNotification} n
  */
 function renderNewspaperCard(n) {
@@ -527,10 +623,6 @@ function renderNewspaperCard(n) {
       })
     : "";
   const look = newspaperLook(n.id || headline);
-  // Inline background-image (not CSS var) — reliable; avoids .notif-card-inner wipe
-  const style = bg
-    ? ` style="background-image: url(&quot;${esc(bg)}&quot;)"`
-    : "";
 
   return `
     <article class="notif-card notif-card--newspaper is-clickable"
@@ -540,8 +632,14 @@ function renderNewspaperCard(n) {
       role="button"
       tabindex="0"
       aria-label="Powiadomienie gazetowe: ${esc(headline)}">
-      <div class="notif-card-inner newspaper-card newspaper-font--${look.font} newspaper-ink--${look.ink} newspaper-align--${look.align}"${style}>
-        <div class="newspaper-card-content">
+      <div class="notif-card-inner newspaper-card newspaper-font--${look.font} newspaper-ink--${look.ink} newspaper-align--${look.align}"
+        data-newspaper-layout>
+        ${
+          bg
+            ? `<img class="newspaper-scan" src="${esc(bg)}" alt="" draggable="false" decoding="async" />`
+            : `<div class="newspaper-scan newspaper-scan--empty" aria-hidden="true"></div>`
+        }
+        <div class="newspaper-card-content" data-newspaper-copy>
           ${
             headline
               ? `<h3 class="newspaper-headline">${esc(headline)}</h3>`
@@ -611,14 +709,17 @@ export function renderNotificationsSection(notifications) {
 export function renderNewspaperFullscreen(paper) {
   const bg = newspaperBgUrl(paper?.background || "");
   const look = newspaperLook(paper?.styleSeed || paper?.headline || bg || "fs");
-  const style = bg
-    ? ` style="background-image: url(&quot;${esc(bg)}&quot;)"`
-    : "";
   return `
     <div class="newspaper-fs" role="dialog" aria-modal="true" aria-label="Wycinek gazety">
       <div class="newspaper-fs-backdrop" data-newspaper-fs-close></div>
-      <div class="newspaper-fs-sheet newspaper-font--${look.font} newspaper-ink--${look.ink} newspaper-align--${look.align}"${style} data-newspaper-fs-close>
-        <div class="newspaper-fs-content">
+      <div class="newspaper-fs-sheet newspaper-font--${look.font} newspaper-ink--${look.ink} newspaper-align--${look.align}"
+        data-newspaper-layout data-newspaper-fs-close>
+        ${
+          bg
+            ? `<img class="newspaper-scan" src="${esc(bg)}" alt="" draggable="false" decoding="async" />`
+            : ""
+        }
+        <div class="newspaper-fs-content" data-newspaper-copy>
           ${
             paper?.headline
               ? `<h2 class="newspaper-headline newspaper-headline--fs">${esc(paper.headline)}</h2>`

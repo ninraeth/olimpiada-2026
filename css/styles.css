@@ -1300,9 +1300,9 @@ a {
 
 /* ─── Newspaper cards ───────────────────────────────────────── */
 /*
- * Scans have ~310px masthead at the top — copy starts at 320px.
- * .notif-card-inner sets background shorthand; newspaper rules below
- * must re-declare background-image (inline style) and wipe the solid fill.
+ * Real <img> scan at width 100%. Height = image only (no beige extension).
+ * Copy is absolutely positioned; JS sets top = 320 * (displayW/naturalW)
+ * so the offset matches 320px of the original file, then fits font size.
  */
 
 .notif-card--newspaper .newspaper-card.notif-card-inner,
@@ -1311,16 +1311,10 @@ a {
   position: relative;
   gap: 0;
   align-items: stretch;
-  /* override .notif-card-inner solid fill so the scan shows */
-  background-color: #e8dfc8 !important;
-  background-image: none; /* replaced by inline style when present */
-  background-repeat: no-repeat !important;
-  background-position: top center !important;
-  background-size: 100% auto !important;
+  background: transparent !important;
   border: 1px solid rgba(60, 45, 20, 0.35);
   border-radius: 8px;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-  /* height follows content (masthead offset + text) — no forced tall box */
   height: auto;
   min-height: 0;
   padding: 0 !important;
@@ -1328,70 +1322,69 @@ a {
   color: #1c1914;
 }
 
-/*
- * Masthead of the scan is free (~top 310px).
- * Text is top-aligned from 320px; card ends after the text.
- * No extra paper/vignette overlay — the scan is the page.
- */
-.newspaper-card-content {
-  position: relative;
+.newspaper-scan {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: top;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.newspaper-scan--empty {
+  width: 100%;
+  min-height: 12rem;
+  background: #d4c9a8;
+}
+
+/* Overlay: top/height/padding applied by layoutNewspaperElements() */
+.newspaper-card-content,
+.newspaper-fs-content {
+  position: absolute;
   z-index: 1;
   margin: 0;
-  padding: 320px 1.05rem 1rem;
-  background: none;
+  background: none !important;
+  box-sizing: border-box;
   display: block;
+  overflow: hidden;
 }
 
 .newspaper-headline {
-  margin: 0 0 0.55rem;
-  font-size: clamp(1.15rem, 4.2vw, 1.55rem);
+  margin: 0 0 0.45rem;
+  font-size: 1.2rem; /* refined by JS fit */
   font-weight: 900;
   line-height: 1.15;
   letter-spacing: 0.01em;
   text-transform: uppercase;
   color: #12100c;
-  /* print / ink feel */
   text-shadow:
     0.4px 0.4px 0 rgba(0, 0, 0, 0.18),
     0 0 0.5px rgba(0, 0, 0, 0.25);
 }
 
 .newspaper-headline--fs {
-  font-size: clamp(1.35rem, 4.5vw, 1.85rem);
-  margin-bottom: 0.7rem;
+  font-size: 1.4rem;
 }
 
 .newspaper-body {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.88rem; /* refined by JS fit */
   font-weight: 400;
-  line-height: 1.55;
+  line-height: 1.45;
   text-align: justify;
   hyphens: auto;
   -webkit-hyphens: auto;
   color: #1f1a14;
-  text-shadow: 0 0 0.4px rgba(0, 0, 0, 0.15);
-  /* multi-column vibe on wider cards */
-  column-count: 1;
+  text-shadow: 0 0 0.4px rgba(0, 0, 0, 0.12);
 }
 
 .newspaper-body--fs {
-  font-size: 0.98rem;
-  line-height: 1.6;
   max-width: none;
 }
 
-.newspaper-body::first-letter {
-  font-weight: 700;
-  font-size: 1.35em;
-  line-height: 1;
-  float: left;
-  padding: 0.08em 0.12em 0 0;
-  color: inherit;
-}
-
 .newspaper-time {
-  margin: 0.75rem 0 0;
+  margin: 0.55rem 0 0;
   font-size: 0.68rem;
   font-style: italic;
   letter-spacing: 0.04em;
@@ -1442,6 +1435,13 @@ a {
 }
 .newspaper-ink--crimson .newspaper-headline {
   color: #7a1c1c;
+}
+/* Loud tabloid printer red */
+.newspaper-ink--tabloid .newspaper-headline {
+  color: #e10600;
+  text-shadow:
+    0.5px 0.5px 0 rgba(80, 0, 0, 0.25),
+    0 0 0.6px rgba(0, 0, 0, 0.2);
 }
 .newspaper-ink--navy .newspaper-headline {
   color: #1a2744;
@@ -1504,26 +1504,20 @@ body.newspaper-fs-open {
   border-radius: 10px;
   border: 1px solid rgba(60, 45, 20, 0.4);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  background-color: #e8dfc8;
-  background-repeat: no-repeat;
-  background-position: top center;
-  background-size: 100% auto;
+  background: transparent;
   cursor: pointer;
   color: #1c1914;
+  padding: 0;
 }
 
-.newspaper-fs-content {
-  position: relative;
-  z-index: 1;
+.newspaper-fs-sheet .newspaper-scan {
+  width: 100%;
+  height: auto;
   display: block;
-  min-height: 0;
-  /* top-aligned under masthead; sheet ends after text */
-  padding: 320px 1.2rem 1.15rem;
-  background: none;
 }
 
 .newspaper-fs-hint {
-  margin: 0.85rem 0 0;
+  margin: 0.55rem 0 0;
   font-size: 0.72rem;
   font-family: Georgia, serif;
   font-style: italic;

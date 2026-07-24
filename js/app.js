@@ -12,6 +12,7 @@ import {
   renderError,
   renderOptionsModalBody,
   renderNewspaperFullscreen,
+  layoutNewspaperElements,
 } from "./render.js";
 import {
   processDataForEvents,
@@ -117,6 +118,7 @@ function render() {
   bindGraczToggles();
   bindMatchToggles();
   bindNotificationSwipe();
+  layoutNewspaperElements(els.content);
 
   if (els.refreshBtn) {
     els.refreshBtn.disabled = state.loading;
@@ -223,8 +225,10 @@ function openNewspaperFullscreen(paper) {
   root.querySelectorAll("[data-newspaper-fs-close]").forEach((el) => {
     el.addEventListener("click", () => closeNewspaperFullscreen());
   });
+  layoutNewspaperElements(root);
   requestAnimationFrame(() => {
     root.querySelector(".newspaper-fs")?.classList.add("is-visible");
+    layoutNewspaperElements(root);
   });
 }
 
@@ -571,6 +575,20 @@ function initFromHash() {
 function init() {
   document.title = APP_TITLE;
   initFromHash();
+
+  // Re-fit newspaper text when viewport width changes (scan scale changes)
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      if (state.activeTab === "info" && els.content) {
+        layoutNewspaperElements(els.content);
+      }
+      if (document.body.classList.contains("newspaper-fs-open")) {
+        layoutNewspaperElements(ensureNewspaperFsRoot());
+      }
+    }, 120);
+  });
 
   state.notifications = loadNotifications();
   preloadCelebrationSound();
