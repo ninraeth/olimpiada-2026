@@ -17,8 +17,19 @@ import {
   DEFAULT_MEDAL_SOUND_ID,
 } from "./config.js";
 import { parseMatchScore } from "./data.js";
+import { detectNewspaperEvents } from "./newspaper.js";
 
-/** @typedef {'match_result' | 'leader' | 'gold'} NotificationType */
+/** @typedef {'match_result' | 'leader' | 'gold' | 'newspaper'} NotificationType */
+
+/**
+ * @typedef {object} NewspaperPayload
+ * @property {string} background
+ * @property {string} headline
+ * @property {string} body
+ * @property {string} [bgKey]
+ * @property {string} [stage]
+ * @property {boolean} [dominant]
+ */
 
 /**
  * @typedef {object} AppNotification
@@ -31,6 +42,7 @@ import { parseMatchScore } from "./data.js";
  * @property {string} [discipline]
  * @property {string} [recipient]
  * @property {string} [tabId] discipline tab to open on click
+ * @property {NewspaperPayload} [newspaper]
  */
 
 /**
@@ -43,6 +55,7 @@ import { parseMatchScore } from "./data.js";
  * @property {string} [recipient]
  * @property {string} [tabId]
  * @property {boolean} [celebrate]
+ * @property {NewspaperPayload} [newspaper]
  */
 
 const SNAPSHOT_VERSION = 1;
@@ -144,6 +157,7 @@ export function addNotificationsFromEvents(events) {
     discipline: e.discipline,
     recipient: e.recipient,
     tabId: e.tabId,
+    newspaper: e.newspaper || undefined,
   }));
   const merged = [...incoming, ...loadNotifications()].slice(0, MAX_NOTIFICATIONS);
   persistNotifications(merged);
@@ -494,18 +508,30 @@ export function detectEvents(prev, next, data) {
 }
 
 /**
- * Run full detect cycle: load prev snapshot, compare, save next, return events.
+ * Run full detect cycle: load prev snapshot, compare, save next.
  * First run (no prev) only baselines — no notifications.
+ * Newspaper events are computed after regular ones and should be stored
+ * second so they appear newer (higher) on the Info list.
+ *
  * @param {any} data
- * @returns {DetectedEvent[]}
+ * @returns {{ regular: DetectedEvent[], newspaper: DetectedEvent[] }}
  */
 export function processDataForEvents(data) {
   const next = extractEventsSnapshot(data);
   const prev = loadEventsSnapshot();
-  let events = [];
+  /** @type {DetectedEvent[]} */
+  let regular = [];
+  /** @type {DetectedEvent[]} */
+  let newspaper = [];
   if (prev) {
-    events = detectEvents(prev, next, data);
+    regular = detectEvents(prev, next, data);
+    try {
+      newspaper = detectNewspaperEvents(prev, next, data);
+    } catch (err) {
+      console.warn("newspaper detect failed", err);
+      newspaper = [];
+    }
   }
   saveEventsSnapshot(next);
-  return events;
+  return { regular, newspaper };
 }

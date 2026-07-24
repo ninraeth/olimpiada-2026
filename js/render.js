@@ -472,7 +472,52 @@ function notificationIcon(type) {
   if (type === "gold") return "🥇";
   if (type === "leader") return "👑";
   if (type === "match_result") return "📣";
+  if (type === "newspaper") return "📰";
   return "🔔";
+}
+
+/**
+ * Large newspaper card (background + headline/body).
+ * @param {import('./notifications.js').AppNotification} n
+ */
+function renderNewspaperCard(n) {
+  const paper = n.newspaper || {};
+  const bg = paper.background || "";
+  const headline = paper.headline || n.title || "";
+  const body = paper.body || n.body || "";
+  const time = n.createdAt
+    ? new Date(n.createdAt).toLocaleString("pl-PL", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
+  const style = bg
+    ? ` style="--paper-bg: url('${esc(bg)}')"`
+    : "";
+
+  return `
+    <article class="notif-card notif-card--newspaper is-clickable"
+      data-notif-id="${esc(n.id)}"
+      data-swipe-notif
+      data-newspaper-open
+      role="button"
+      tabindex="0"
+      aria-label="Powiadomienie gazetowe: ${esc(headline)}">
+      <div class="notif-card-inner newspaper-card"${style}>
+        <div class="newspaper-card-shade"></div>
+        <div class="newspaper-card-content">
+          ${
+            headline
+              ? `<h3 class="newspaper-headline">${esc(headline)}</h3>`
+              : ""
+          }
+          ${body ? `<p class="newspaper-body">${esc(body)}</p>` : ""}
+          ${time ? `<p class="newspaper-time">${esc(time)}</p>` : ""}
+        </div>
+      </div>
+    </article>`;
 }
 
 /**
@@ -485,6 +530,10 @@ export function renderNotificationsSection(notifications) {
 
   const cards = list
     .map((n) => {
+      if (n.type === "newspaper" && n.newspaper) {
+        return renderNewspaperCard(n);
+      }
+
       const time = n.createdAt
         ? new Date(n.createdAt).toLocaleString("pl-PL", {
             day: "2-digit",
@@ -516,9 +565,38 @@ export function renderNotificationsSection(notifications) {
   return `
     <section class="block notif-section" aria-label="Powiadomienia">
       <h2 class="section-title">Powiadomienia <span class="section-count">${list.length}</span></h2>
-      <p class="hint">Dotknij, aby otworzyć dyscyplinę · przesuń w bok, aby usunąć</p>
+      <p class="hint">Dotknij kartę · gazeta na pełny ekran · przesuń w bok, aby usunąć</p>
       <div class="notif-list">${cards}</div>
     </section>`;
+}
+
+/**
+ * Fullscreen newspaper overlay markup (injected by app.js).
+ * @param {{ background?: string, headline?: string, body?: string }} paper
+ */
+export function renderNewspaperFullscreen(paper) {
+  const bg = paper?.background || "";
+  const style = bg ? ` style="--paper-bg: url('${esc(bg)}')"` : "";
+  return `
+    <div class="newspaper-fs" role="dialog" aria-modal="true" aria-label="Wycinek gazety">
+      <div class="newspaper-fs-backdrop" data-newspaper-fs-close></div>
+      <div class="newspaper-fs-sheet"${style} data-newspaper-fs-close>
+        <div class="newspaper-fs-shade"></div>
+        <div class="newspaper-fs-content">
+          ${
+            paper?.headline
+              ? `<h2 class="newspaper-headline newspaper-headline--fs">${esc(paper.headline)}</h2>`
+              : ""
+          }
+          ${
+            paper?.body
+              ? `<p class="newspaper-body newspaper-body--fs">${esc(paper.body)}</p>`
+              : ""
+          }
+          <p class="newspaper-fs-hint">Dotknij, aby zamknąć</p>
+        </div>
+      </div>
+    </div>`;
 }
 
 /**

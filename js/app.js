@@ -11,6 +11,7 @@ import {
   renderLoading,
   renderError,
   renderOptionsModalBody,
+  renderNewspaperFullscreen,
 } from "./render.js";
 import {
   processDataForEvents,
@@ -191,8 +192,44 @@ function bindMatchToggles() {
   });
 }
 
+/** @type {HTMLElement|null} */
+let newspaperFsRoot = null;
+
+function ensureNewspaperFsRoot() {
+  if (!newspaperFsRoot) {
+    newspaperFsRoot = document.getElementById("newspaper-fs-root");
+    if (!newspaperFsRoot) {
+      newspaperFsRoot = document.createElement("div");
+      newspaperFsRoot.id = "newspaper-fs-root";
+      document.body.appendChild(newspaperFsRoot);
+    }
+  }
+  return newspaperFsRoot;
+}
+
+function closeNewspaperFullscreen() {
+  const root = ensureNewspaperFsRoot();
+  root.innerHTML = "";
+  document.body.classList.remove("newspaper-fs-open");
+}
+
 /**
- * Swipe-to-dismiss + click-to-open discipline for notification cards.
+ * @param {import('./notifications.js').NewspaperPayload|object} paper
+ */
+function openNewspaperFullscreen(paper) {
+  const root = ensureNewspaperFsRoot();
+  root.innerHTML = renderNewspaperFullscreen(paper);
+  document.body.classList.add("newspaper-fs-open");
+  root.querySelectorAll("[data-newspaper-fs-close]").forEach((el) => {
+    el.addEventListener("click", () => closeNewspaperFullscreen());
+  });
+  requestAnimationFrame(() => {
+    root.querySelector(".newspaper-fs")?.classList.add("is-visible");
+  });
+}
+
+/**
+ * Swipe-to-dismiss + click (tab or newspaper fullscreen).
  */
 function bindNotificationSwipe() {
   if (!els.content) return;
@@ -200,6 +237,7 @@ function bindNotificationSwipe() {
     const id = card.getAttribute("data-notif-id");
     if (!id) return;
     const tabId = card.getAttribute("data-notif-tab");
+    const isNewspaper = card.hasAttribute("data-newspaper-open");
 
     let startX = 0;
     let startY = 0;
@@ -210,9 +248,14 @@ function bindNotificationSwipe() {
 
     const inner = card.querySelector(".notif-card-inner") || card;
 
-    const openTab = () => {
-      if (!tabId || didSwipe) return;
-      switchTab(tabId);
+    const activate = () => {
+      if (didSwipe) return;
+      if (isNewspaper) {
+        const n = state.notifications.find((x) => x.id === id);
+        if (n?.newspaper) openNewspaperFullscreen(n.newspaper);
+        return;
+      }
+      if (tabId) switchTab(tabId);
     };
 
     const onStart = (clientX, clientY) => {
@@ -246,7 +289,6 @@ function bindNotificationSwipe() {
 
     const onEnd = () => {
       if (!tracking && horizontal == null) {
-        // pure click without move tracking edge-case
         return;
       }
       tracking = false;
@@ -265,7 +307,7 @@ function bindNotificationSwipe() {
         inner.style.transform = "";
         inner.style.opacity = "";
         if (!didSwipe && Math.abs(dx) < 12) {
-          openTab();
+          activate();
         }
       }
       dx = 0;
@@ -294,18 +336,17 @@ function bindNotificationSwipe() {
     card.addEventListener("touchcancel", onEnd);
 
     card.addEventListener("click", (e) => {
-      // Keyboard / mouse click without drag
       if (didSwipe) {
         e.preventDefault();
         return;
       }
-      openTab();
+      activate();
     });
 
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        openTab();
+        activate();
       }
     });
 
@@ -397,8 +438,12 @@ function bindOptionsUi() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.optionsOpen) {
-      closeOptions();
+    if (e.key === "Escape") {
+      if (document.body.classList.contains("newspaper-fs-open")) {
+        closeNewspaperFullscreen();
+        return;
+      }
+      if (state.optionsOpen) closeOptions();
     }
   });
 }
@@ -407,21 +452,28 @@ function bindOptionsUi() {
 
 /**
  * Detect changes vs previous snapshot, store cards, queue celebrations.
+ * Regular notifications first, then newspaper (newer → higher on list).
  * @param {any} data
  */
 function handleDataEvents(data) {
-  const events = processDataForEvents(data);
-  if (!events.length) return;
+  const { regular, newspaper } = processDataForEvents(data);
+  if (!regular.length && !newspaper.length) return;
 
-  state.notifications = addNotificationsFromEvents(events);
-
-  for (const ev of events) {
-    if (ev.celebrate && ev.type === "gold") {
-      queueGoldCelebration({
-        recipient: ev.recipient,
-        discipline: ev.discipline,
-      });
+  // 1) regular cards
+  if (regular.length) {
+    state.notifications = addNotificationsFromEvents(regular);
+    for (const ev of regular) {
+      if (ev.celebrate && ev.type === "gold") {
+        queueGoldCelebration({
+          recipient: ev.recipient,
+          discipline: ev.discipline,
+        });
+      }
     }
+  }
+  // 2) newspaper cards on top (processed after → higher createdAt / prepend)
+  if (newspaper.length) {
+    state.notifications = addNotificationsFromEvents(newspaper);
   }
 }
 

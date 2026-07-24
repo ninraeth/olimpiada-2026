@@ -49,6 +49,9 @@ export const NOTIFICATIONS_KEY = "olimpiada2026_notifications_v1";
 /** localStorage: user preferences (sounds, …) */
 export const SETTINGS_KEY = "olimpiada2026_settings_v1";
 
+/** localStorage: next newspaper text index per template pool */
+export const NEWSPAPER_TEXT_USAGE_KEY = "olimpiada2026_newspaper_text_usage_v1";
+
 /**
  * Gold-medal celebration sounds available in Options.
  * `url: null` = built-in Web Audio chime ("Domyślny").

@@ -165,7 +165,7 @@ function playMedalSound() {
   }
 }
 
-function confettiPieces(count = 48) {
+function confettiPieces(count = 64) {
   const colors = [
     "#fbbf24",
     "#f59e0b",
@@ -178,12 +178,13 @@ function confettiPieces(count = 48) {
   let html = "";
   for (let i = 0; i < count; i++) {
     const left = Math.random() * 100;
-    const delay = Math.random() * 0.8;
-    const dur = 2.2 + Math.random() * 1.8;
+    // Stagger across full cycle so loops feel continuous
+    const delay = Math.random() * 3.2;
+    const dur = 2.4 + Math.random() * 2.2;
     const size = 6 + Math.random() * 8;
     const color = colors[i % colors.length];
     const rot = Math.random() * 360;
-    const drift = (Math.random() - 0.5) * 120;
+    const drift = (Math.random() - 0.5) * 140;
     html += `<span class="celeb-confetti" style="
       --c-left:${left}%;
       --c-delay:${delay}s;
@@ -199,15 +200,21 @@ function confettiPieces(count = 48) {
 
 function fireworkBursts() {
   let html = "";
+  // Multiple layers with different periods so bursts keep reappearing
   const spots = [
-    { x: 18, y: 22 },
-    { x: 82, y: 18 },
-    { x: 50, y: 12 },
-    { x: 30, y: 35 },
-    { x: 70, y: 32 },
+    { x: 18, y: 18, d: 0, dur: 1.2 },
+    { x: 82, y: 16, d: 0.35, dur: 1.35 },
+    { x: 50, y: 10, d: 0.7, dur: 1.15 },
+    { x: 28, y: 32, d: 0.2, dur: 1.5 },
+    { x: 72, y: 30, d: 0.55, dur: 1.4 },
+    { x: 12, y: 42, d: 0.9, dur: 1.25 },
+    { x: 88, y: 40, d: 1.1, dur: 1.45 },
+    { x: 40, y: 22, d: 1.4, dur: 1.3 },
+    { x: 60, y: 38, d: 0.45, dur: 1.55 },
+    { x: 50, y: 48, d: 1.6, dur: 1.2 },
   ];
-  spots.forEach((s, i) => {
-    html += `<span class="celeb-firework" style="--fx:${s.x}%;--fy:${s.y}%;--fd:${0.15 * i}s"></span>`;
+  spots.forEach((s) => {
+    html += `<span class="celeb-firework" style="--fx:${s.x}%;--fy:${s.y}%;--fd:${s.d}s;--c-burst-dur:${s.dur}s"></span>`;
   });
   return html;
 }

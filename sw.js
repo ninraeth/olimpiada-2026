@@ -1,5 +1,5 @@
 /* Service Worker — Olimpiada Bieździadów 2026 */
-const CACHE_NAME = "olimpiada-2026-v28";
+const CACHE_NAME = "olimpiada-2026-v30";
 const SHELL = [
   "./",
   "./index.html",
@@ -10,10 +10,22 @@ const SHELL = [
   "./js/render.js",
   "./js/notifications.js",
   "./js/celebration.js",
+  "./js/newspaper.js",
+  "./js/newspaperTexts.js",
+  "./js/newspaperBackgrounds.js",
   "./js/sw-register.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./data/fuckt.jpg",
+  "./data/czas.jpg",
+  "./data/jar.jpg",
+  "./data/ps.jpg",
+  "./data/rzecz.jpg",
+  "./data/sven.jpg",
+  "./data/targi.jpg",
+  "./data/times.jpg",
+  "./data/wyb.jpg",
 ];
 
 self.addEventListener("install", (event) => {
