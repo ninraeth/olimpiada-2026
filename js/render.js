@@ -477,12 +477,45 @@ function notificationIcon(type) {
 }
 
 /**
+ * Stable pseudo-random style for a newspaper card (from id).
+ * @param {string} id
+ * @returns {{ font: string, ink: string, align: string }}
+ */
+function newspaperLook(id) {
+  const fonts = ["playfair", "libre", "merriweather", "newsreader", "elite"];
+  const inks = ["ink", "crimson", "navy", "umber", "slate"];
+  let h = 0;
+  const s = String(id || "x");
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  const a = Math.abs(h);
+  return {
+    font: fonts[a % fonts.length],
+    ink: inks[(a >>> 3) % inks.length],
+    // slight rotation of "columns" feel
+    align: a % 5 === 0 ? "ragged" : "justify",
+  };
+}
+
+/**
+ * Normalize bg path for CSS url() — absolute from app root.
+ * @param {string} bg
+ */
+function newspaperBgUrl(bg) {
+  if (!bg) return "";
+  let p = String(bg).trim();
+  if (p.startsWith("./")) p = p.slice(2);
+  if (!p.startsWith("/") && !/^https?:/i.test(p)) p = `./${p}`;
+  return p;
+}
+
+/**
  * Large newspaper card (background + headline/body).
+ * Masthead of scan occupies ~top 310px — copy starts below (~320px).
  * @param {import('./notifications.js').AppNotification} n
  */
 function renderNewspaperCard(n) {
   const paper = n.newspaper || {};
-  const bg = paper.background || "";
+  const bg = newspaperBgUrl(paper.background || "");
   const headline = paper.headline || n.title || "";
   const body = paper.body || n.body || "";
   const time = n.createdAt
@@ -493,8 +526,10 @@ function renderNewspaperCard(n) {
         minute: "2-digit",
       })
     : "";
+  const look = newspaperLook(n.id || headline);
+  // Inline background-image (not CSS var) — reliable; avoids .notif-card-inner wipe
   const style = bg
-    ? ` style="--paper-bg: url('${esc(bg)}')"`
+    ? ` style="background-image: url(&quot;${esc(bg)}&quot;)"`
     : "";
 
   return `
@@ -505,8 +540,7 @@ function renderNewspaperCard(n) {
       role="button"
       tabindex="0"
       aria-label="Powiadomienie gazetowe: ${esc(headline)}">
-      <div class="notif-card-inner newspaper-card"${style}>
-        <div class="newspaper-card-shade"></div>
+      <div class="notif-card-inner newspaper-card newspaper-font--${look.font} newspaper-ink--${look.ink} newspaper-align--${look.align}"${style}>
         <div class="newspaper-card-content">
           ${
             headline
@@ -572,16 +606,18 @@ export function renderNotificationsSection(notifications) {
 
 /**
  * Fullscreen newspaper overlay markup (injected by app.js).
- * @param {{ background?: string, headline?: string, body?: string }} paper
+ * @param {{ background?: string, headline?: string, body?: string, styleSeed?: string }} paper
  */
 export function renderNewspaperFullscreen(paper) {
-  const bg = paper?.background || "";
-  const style = bg ? ` style="--paper-bg: url('${esc(bg)}')"` : "";
+  const bg = newspaperBgUrl(paper?.background || "");
+  const look = newspaperLook(paper?.styleSeed || paper?.headline || bg || "fs");
+  const style = bg
+    ? ` style="background-image: url(&quot;${esc(bg)}&quot;)"`
+    : "";
   return `
     <div class="newspaper-fs" role="dialog" aria-modal="true" aria-label="Wycinek gazety">
       <div class="newspaper-fs-backdrop" data-newspaper-fs-close></div>
-      <div class="newspaper-fs-sheet"${style} data-newspaper-fs-close>
-        <div class="newspaper-fs-shade"></div>
+      <div class="newspaper-fs-sheet newspaper-font--${look.font} newspaper-ink--${look.ink} newspaper-align--${look.align}"${style} data-newspaper-fs-close>
         <div class="newspaper-fs-content">
           ${
             paper?.headline

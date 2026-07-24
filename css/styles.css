@@ -1299,71 +1299,168 @@ a {
 }
 
 /* ─── Newspaper cards ───────────────────────────────────────── */
+/*
+ * Scans have ~310px masthead at the top — copy starts at 320px.
+ * .notif-card-inner sets background shorthand; newspaper rules below
+ * must re-declare background-image (inline style) and wipe the solid fill.
+ */
 
+.notif-card--newspaper .newspaper-card.notif-card-inner,
 .notif-card--newspaper .newspaper-card {
+  display: block;
   position: relative;
-  min-height: 11.5rem;
-  padding: 1.1rem 1rem 1.2rem;
-  border: 1px solid rgba(251, 191, 36, 0.28);
-  background-color: #1a1208;
-  background-image: var(--paper-bg);
-  background-size: cover;
-  background-position: center;
+  gap: 0;
+  align-items: stretch;
+  /* override .notif-card-inner solid fill so the scan shows */
+  background-color: #f3ead2 !important;
+  background-image: none; /* replaced by inline style when present */
+  background-repeat: no-repeat !important;
+  background-position: top center !important;
+  background-size: 100% auto !important;
+  border: 1px solid rgba(60, 45, 20, 0.35);
+  border-radius: 8px;
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  /* room for masthead + article */
+  min-height: 520px;
+  padding: 0 !important;
   overflow: hidden;
+  color: #1c1914;
 }
 
-.newspaper-card-shade,
-.newspaper-fs-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    165deg,
-    rgba(8, 12, 20, 0.55) 0%,
-    rgba(8, 12, 20, 0.72) 55%,
-    rgba(8, 12, 20, 0.82) 100%
-  );
-  pointer-events: none;
-}
-
-.newspaper-card-content,
-.newspaper-fs-content {
+/* Keep masthead free; article starts ~320px from top of scan */
+.newspaper-card-content {
   position: relative;
   z-index: 1;
+  margin: 0;
+  padding: 320px 1.05rem 1.15rem;
+  /* subtle paper veil only under the text (not the logo zone) */
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 234, 210, 0) 0,
+    rgba(243, 234, 210, 0.55) 28px,
+    rgba(248, 241, 220, 0.9) 70px,
+    rgba(250, 244, 228, 0.94) 100%
+  );
 }
 
 .newspaper-headline {
-  margin: 0 0 0.45rem;
-  font-size: 1.15rem;
-  font-weight: 800;
-  line-height: 1.25;
+  margin: 0 0 0.55rem;
+  font-size: clamp(1.15rem, 4.2vw, 1.55rem);
+  font-weight: 900;
+  line-height: 1.15;
   letter-spacing: 0.01em;
-  color: #fffbeb;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+  text-transform: uppercase;
+  color: #12100c;
+  /* print / ink feel */
+  text-shadow:
+    0.4px 0.4px 0 rgba(0, 0, 0, 0.18),
+    0 0 0.5px rgba(0, 0, 0, 0.25);
 }
 
 .newspaper-headline--fs {
-  font-size: clamp(1.4rem, 5vw, 2rem);
-  margin-bottom: 0.75rem;
+  font-size: clamp(1.35rem, 4.5vw, 1.85rem);
+  margin-bottom: 0.7rem;
 }
 
 .newspaper-body {
   margin: 0;
-  font-size: 0.92rem;
-  font-weight: 600;
-  line-height: 1.4;
-  color: #e2e8f0;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  font-size: 0.88rem;
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  color: #1f1a14;
+  text-shadow: 0 0 0.4px rgba(0, 0, 0, 0.15);
+  /* multi-column vibe on wider cards */
+  column-count: 1;
 }
 
 .newspaper-body--fs {
-  font-size: 1.05rem;
-  max-width: 36rem;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  max-width: none;
+}
+
+.newspaper-body::first-letter {
+  font-weight: 700;
+  font-size: 1.35em;
+  line-height: 1;
+  float: left;
+  padding: 0.08em 0.12em 0 0;
+  color: inherit;
 }
 
 .newspaper-time {
-  margin: 0.65rem 0 0;
-  font-size: 0.7rem;
-  color: rgba(226, 232, 240, 0.7);
+  margin: 0.75rem 0 0;
+  font-size: 0.68rem;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  color: #5c5346;
+  text-align: right;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+/* Font variants (Google Fonts + system fallbacks) */
+.newspaper-font--playfair .newspaper-headline {
+  font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+  letter-spacing: 0.02em;
+}
+.newspaper-font--playfair .newspaper-body {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.newspaper-font--libre .newspaper-headline,
+.newspaper-font--libre .newspaper-body {
+  font-family: "Libre Baskerville", Georgia, serif;
+}
+.newspaper-font--libre .newspaper-headline {
+  letter-spacing: 0.03em;
+}
+
+.newspaper-font--merriweather .newspaper-headline,
+.newspaper-font--merriweather .newspaper-body {
+  font-family: Merriweather, Georgia, serif;
+}
+
+.newspaper-font--newsreader .newspaper-headline,
+.newspaper-font--newsreader .newspaper-body {
+  font-family: Newsreader, "Times New Roman", serif;
+}
+
+.newspaper-font--elite .newspaper-headline,
+.newspaper-font--elite .newspaper-body {
+  font-family: "Special Elite", "Courier New", monospace;
+}
+.newspaper-font--elite .newspaper-headline {
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+/* Headline ink colors */
+.newspaper-ink--ink .newspaper-headline {
+  color: #12100c;
+}
+.newspaper-ink--crimson .newspaper-headline {
+  color: #7a1c1c;
+}
+.newspaper-ink--navy .newspaper-headline {
+  color: #1a2744;
+}
+.newspaper-ink--umber .newspaper-headline {
+  color: #5c3a14;
+}
+.newspaper-ink--slate .newspaper-headline {
+  color: #2c3540;
+}
+
+.newspaper-align--justify .newspaper-body {
+  text-align: justify;
+}
+.newspaper-align--ragged .newspaper-body {
+  text-align: left;
 }
 
 /* Fullscreen newspaper */
@@ -1382,7 +1479,7 @@ body.newspaper-fs-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem;
+  padding: 0.5rem;
   opacity: 0;
   transition: opacity 0.25s ease;
   pointer-events: none;
@@ -1403,32 +1500,43 @@ body.newspaper-fs-open {
 .newspaper-fs-sheet {
   position: relative;
   z-index: 1;
-  width: min(520px, 100%);
-  min-height: min(72vh, 640px);
-  max-height: 92vh;
+  width: min(480px, 100%);
+  min-height: min(88vh, 860px);
+  max-height: 94vh;
   overflow: auto;
-  border-radius: 16px;
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 10px;
+  border: 1px solid rgba(60, 45, 20, 0.4);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  background-color: #1a1208;
-  background-image: var(--paper-bg);
-  background-size: cover;
-  background-position: center;
+  background-color: #f3ead2;
+  background-repeat: no-repeat;
+  background-position: top center;
+  background-size: 100% auto;
   cursor: pointer;
+  color: #1c1914;
 }
 
 .newspaper-fs-content {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  position: relative;
+  z-index: 1;
+  display: block;
   min-height: inherit;
-  padding: 1.5rem 1.25rem 1.35rem;
+  /* same masthead clearance as list cards */
+  padding: 320px 1.2rem 1.4rem;
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 234, 210, 0) 0,
+    rgba(243, 234, 210, 0.55) 28px,
+    rgba(248, 241, 220, 0.92) 80px,
+    rgba(250, 244, 228, 0.96) 100%
+  );
 }
 
 .newspaper-fs-hint {
-  margin: 1.25rem 0 0;
-  font-size: 0.75rem;
-  color: rgba(226, 232, 240, 0.65);
+  margin: 1.1rem 0 0;
+  font-size: 0.72rem;
+  font-family: Georgia, serif;
+  font-style: italic;
+  color: #6b6254;
   text-align: center;
 }
 

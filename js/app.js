@@ -264,7 +264,9 @@ function bindNotificationSwipe() {
     const activate = () => {
       if (isNewspaper) {
         const n = state.notifications.find((x) => x.id === id);
-        if (n?.newspaper) openNewspaperFullscreen(n.newspaper);
+        if (n?.newspaper) {
+          openNewspaperFullscreen({ ...n.newspaper, styleSeed: n.id });
+        }
         return;
       }
       if (tabId) switchTab(tabId);
