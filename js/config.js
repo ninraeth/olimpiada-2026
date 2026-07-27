@@ -61,10 +61,26 @@ export const NEWSPAPER_FIRED_KEY = "olimpiada2026_newspaper_fired_v1";
 /**
  * Gold-medal celebration sounds available in Options.
  * `url: null` = built-in Web Audio chime ("Domyślny").
+ * Files live in /sounds/.
  */
 export const MEDAL_SOUNDS = [
   { id: "default", label: "Domyślny", url: null },
   { id: "incredible", label: "Incredible", url: "sounds/incredible.mp3" },
+  { id: "67_ft_dori", label: "67 (ft. Dori)", url: "sounds/67_ft_Dori.mp3" },
+  { id: "champions", label: "The Champions", url: "sounds/Champions.mp3" },
+  {
+    id: "m_to_the_b",
+    label: "M to the B (ft. Dori67)",
+    url: "sounds/M_to_the_B_ft_Dori67.mp3",
+  },
+  { id: "mario", label: "Mario", url: "sounds/mario.mp3" },
+  { id: "noice", label: "Noice", url: "sounds/noice.mp3" },
+  { id: "rocky", label: "Rocky", url: "sounds/rocky.mp3" },
+  {
+    id: "king_of_the_world",
+    label: "King of the world",
+    url: "sounds/Titanic_king_of_the_world.mp3",
+  },
 ];
 
 /** Default selection when nothing stored yet */

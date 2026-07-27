@@ -58,7 +58,8 @@ import { detectNewspaperEvents } from "./newspaper.js";
  * @property {NewspaperPayload} [newspaper]
  */
 
-const SNAPSHOT_VERSION = 1;
+/** Bump when match-key format changes (invalidates old event snapshots). */
+const SNAPSHOT_VERSION = 2;
 const MAX_NOTIFICATIONS = 80;
 
 // ─── Settings ──────────────────────────────────────────────────
@@ -322,7 +323,19 @@ function extractGolds(disciplines) {
 }
 
 /**
- * Match scores keyed by stable identity.
+ * Stable match identity: discipline + phase + sides (no row index).
+ * Adding/reordering rows in the sheet does not change the key.
+ * @param {string} tabId
+ * @param {{ phase?: string, side1?: string, side2?: string }} m
+ */
+export function matchIdentityKey(tabId, m) {
+  return [tabId, normKey(m?.phase), normKey(m?.side1), normKey(m?.side2)].join(
+    "|"
+  );
+}
+
+/**
+ * Match scores keyed by stable identity (no sheet row index).
  * @param {Record<string, any>} disciplines
  * @returns {Record<string, string>}
  */
@@ -333,18 +346,13 @@ function extractMatchScores(disciplines) {
   for (const id of matchTabs) {
     const disc = disciplines?.[id];
     if (!disc?.matches?.length) continue;
-    disc.matches.forEach((m, i) => {
+    for (const m of disc.matches) {
       const score = cellStr(m.score);
-      if (!score) return;
-      const key = [
-        id,
-        normKey(m.phase),
-        normKey(m.side1),
-        normKey(m.side2),
-        String(i),
-      ].join("|");
+      if (!score) continue;
+      const key = matchIdentityKey(id, m);
+      // If duplicate identity (rare), last scored row wins
       out[key] = score;
-    });
+    }
   }
   return out;
 }
@@ -399,15 +407,24 @@ export function matchResultBodies(side1, side2, score) {
 }
 
 /**
- * Reconstruct match meta from key + live data.
+ * Reconstruct match meta from stable key + live data.
+ * Key: tabId|phase|side1|side2 (all normalized in key; lookup by same norms).
  * @param {string} key
  * @param {any} data
  */
 function matchFromKey(key, data) {
-  const [id, , , , idxStr] = key.split("|");
-  const idx = Number(idxStr);
+  const parts = key.split("|");
+  const id = parts[0] || "";
+  const phaseN = parts[1] || "";
+  const s1N = parts[2] || "";
+  const s2N = parts[3] || "";
   const disc = data?.disciplines?.[id];
-  const m = disc?.matches?.[idx];
+  const m = (disc?.matches || []).find(
+    (x) =>
+      normKey(x.phase) === phaseN &&
+      normKey(x.side1) === s1N &&
+      normKey(x.side2) === s2N
+  );
   return {
     id,
     label: discLabel(id, disc?.title),
@@ -415,6 +432,26 @@ function matchFromKey(key, data) {
     side2: m?.side2 || "—",
     score: m?.score || "",
   };
+}
+
+/**
+ * Is this medal recipient a team (plural verbs: zdobyli / wygrali)?
+ * @param {string} name
+ * @param {any} data
+ * @param {string} [discId]
+ */
+export function isTeamRecipient(name, data, discId) {
+  const n = cellStr(name);
+  if (!n) return false;
+  if (/^dru[zż]yna\b/i.test(n)) return true;
+  const checkTeams = (disc) =>
+    (disc?.teams || []).some((t) => normKey(t.name) === normKey(n));
+  if (discId && checkTeams(data?.disciplines?.[discId])) return true;
+  for (const id of ["pilka", "siatkowka", "badminton"]) {
+    if (checkTeams(data?.disciplines?.[id])) return true;
+  }
+  // Medal row with multi-player roster and name not a known individual
+  return false;
 }
 
 /**
@@ -489,8 +526,10 @@ export function detectEvents(prev, next, data) {
     const baseLabel = discLabel(discId);
     const displayLabel =
       discId === "inne" && compName ? compName : baseLabel;
-    const g = genderForName(name, data);
-    const verb = verbForm(g, "zdobyła", "zdobył");
+    // Teams → plural (zdobyli); individuals → gender from Gracze
+    const team = isTeamRecipient(name, data, discId);
+    const g = team ? null : genderForName(name, data);
+    const verb = team ? "zdobyli" : verbForm(g, "zdobyła", "zdobył");
     const nameEsc = escHtml(name);
     events.push({
       type: "gold",

@@ -68,26 +68,44 @@ export function classifyMatchStage(phase) {
   if (
     /o\s*3/.test(p) ||
     /3\s*\.?\s*miejsc/.test(p) ||
-    /br[a]?z/.test(p) ||
-    /third/.test(p) ||
-    /bronze/.test(p)
+    /\bbr[a]?z/.test(p) ||
+    /\bthird\b/.test(p) ||
+    /\bbronze\b/.test(p)
   ) {
     return "third";
   }
 
-  // Półfinał / 1/2 (check before plain "finał")
+  // Early knockout rounds — NOT newspaper territory (must run before "finał")
+  // "1/4 Finału" previously matched final via /\bfina/ — bug.
+  if (
+    /1\s*\/\s*(4|8|16|32)\b/.test(p) ||
+    /cwierc/.test(p) ||
+    /quarter/.test(p) ||
+    /osem\s*fina/.test(p) ||
+    /osemfina/.test(p) ||
+    /round\s*of\s*(16|32)/.test(p)
+  ) {
+    return null;
+  }
+
+  // Półfinał / 1/2
   if (
     /pol\s*fina/.test(p) ||
     /polfina/.test(p) ||
-    /1\s*\/\s*2/.test(p) ||
+    /1\s*\/\s*2\b/.test(p) ||
     /\bsemi\b/.test(p) ||
     /polfinal/.test(p)
   ) {
     return "semi";
   }
 
-  // Finał
-  if (/\bfina/.test(p) || p === "final" || /grand\s*final/.test(p)) {
+  // Finał only (not 1/4, 1/2, pół-, ćwierć-)
+  if (
+    /grand\s*final/.test(p) ||
+    /^final(owy|owa|owe|u)?$/.test(p) ||
+    /^(mecz\s+)?final(owy|owa|owe)?$/.test(p) ||
+    (/\bfinal\b/.test(p) && !/pol/.test(p) && !/1\s*\//.test(p) && !/cwierc/.test(p))
+  ) {
     return "final";
   }
 
@@ -505,17 +523,17 @@ export function detectNewspaperEvents(prev, next, data) {
     const disc = disciplines[tabId];
     if (!discKey || !disc?.matches?.length) continue;
 
-    disc.matches.forEach((m, idx) => {
+    disc.matches.forEach((m) => {
       const score = cellStr(m.score);
       if (!score) return;
 
       const stage = classifyMatchStage(m.phase);
       if (!stage) return;
 
+      // Identity without row index (stable when rows are inserted/reordered)
       const paperId = [
         "match",
         tabId,
-        String(idx),
         normKey(m.phase),
         normKey(m.side1),
         normKey(m.side2),

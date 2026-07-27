@@ -2,7 +2,7 @@
  * DOM rendering for Olimpiada Bieździadów 2026.
  */
 
-import { TABS, APP_TITLE } from "./config.js";
+import { TABS, APP_TITLE, MEDAL_SOUNDS } from "./config.js";
 import { buildPlayerProfile, sortPlayersByMedals } from "./data.js";
 
 function esc(s) {
@@ -477,7 +477,7 @@ function notificationIcon(type) {
 }
 
 /** Original-image Y offset (px) where article text may start */
-export const NEWSPAPER_MASTHEAD_PX = 320;
+export const NEWSPAPER_MASTHEAD_PX = 360;
 
 /**
  * Stable pseudo-random style for a newspaper card (from id).
@@ -518,7 +518,6 @@ function newspaperBgUrl(bg) {
 function fitNewspaperText(content) {
   const headline = content.querySelector(".newspaper-headline");
   const body = content.querySelector(".newspaper-body");
-  const time = content.querySelector(".newspaper-time");
   const hint = content.querySelector(".newspaper-fs-hint");
   const maxH = content.clientHeight;
   if (!maxH || maxH < 8) return;
@@ -537,7 +536,6 @@ function fitNewspaperText(content) {
       body.style.fontSize = `${bodySize}px`;
       body.style.lineHeight = "1.45";
     }
-    if (time) time.style.fontSize = `${Math.max(7, bodySize * 0.72)}px`;
     if (hint) hint.style.fontSize = `${Math.max(7, bodySize * 0.68)}px`;
   };
 
@@ -552,7 +550,7 @@ function fitNewspaperText(content) {
 }
 
 /**
- * Position text at 320px of the *original* image (scaled) and fit type
+ * Position text at 360px of the *original* image (scaled) and fit type
  * inside the remaining scan area — no beige extension below the image.
  * @param {ParentNode} [root]
  */
@@ -573,7 +571,8 @@ export function layoutNewspaperElements(root = document) {
       const scale = dw / nw;
       const dh = nh * scale;
       const top = Math.round(NEWSPAPER_MASTHEAD_PX * scale);
-      const side = Math.max(8, Math.round(12 * scale));
+      // Base 18px of original image width (was 12; +50%)
+      const side = Math.max(12, Math.round(18 * scale));
       const bottom = Math.max(6, Math.round(10 * scale));
       const boxH = Math.max(24, Math.round(dh - top - bottom));
 
@@ -606,7 +605,7 @@ export function layoutNewspaperElements(root = document) {
 
 /**
  * Large newspaper card: real <img> scan + absolutely positioned copy.
- * Text starts at 320px of original image (scaled with the scan).
+ * Text starts at 360px of original image (scaled with the scan).
  * @param {import('./notifications.js').AppNotification} n
  */
 function renderNewspaperCard(n) {
@@ -614,14 +613,6 @@ function renderNewspaperCard(n) {
   const bg = newspaperBgUrl(paper.background || "");
   const headline = paper.headline || n.title || "";
   const body = paper.body || n.body || "";
-  const time = n.createdAt
-    ? new Date(n.createdAt).toLocaleString("pl-PL", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
   const look = newspaperLook(n.id || headline);
 
   return `
@@ -646,7 +637,6 @@ function renderNewspaperCard(n) {
               : ""
           }
           ${body ? `<p class="newspaper-body">${esc(body)}</p>` : ""}
-          ${time ? `<p class="newspaper-time">${esc(time)}</p>` : ""}
         </div>
       </div>
     </article>`;
@@ -744,17 +734,12 @@ export function renderNewspaperFullscreen(paper) {
 export function renderOptionsModalBody(settings, notifCount = 0) {
   const soundOn = settings?.soundEnabled !== false;
   const medalSoundId = settings?.medalSoundId || "default";
-  const soundOptions = [
-    { id: "default", label: "Domyślny" },
-    { id: "incredible", label: "Incredible" },
-  ]
-    .map(
-      (o) =>
-        `<option value="${esc(o.id)}" ${
-          o.id === medalSoundId ? "selected" : ""
-        }>${esc(o.label)}</option>`
-    )
-    .join("");
+  const soundOptions = MEDAL_SOUNDS.map(
+    (o) =>
+      `<option value="${esc(o.id)}" ${
+        o.id === medalSoundId ? "selected" : ""
+      }>${esc(o.label)}</option>`
+  ).join("");
 
   return `
     <h2 id="options-title" class="options-title">Opcje</h2>

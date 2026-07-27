@@ -25,14 +25,14 @@ function ensureOverlayRoot() {
 }
 
 /**
- * Preload file-based medal sounds (no autoplay).
+ * Preload currently selected medal sound (no autoplay / no option preview).
  */
 export function preloadCelebrationSound() {
-  // Lazy: files load on first celebration; optional warm-up of Incredible
-  const incredible = "sounds/incredible.mp3";
-  if (fileSounds.has(incredible)) return;
+  const selected = getSelectedMedalSound();
+  const url = selected?.url;
+  if (!url || fileSounds.has(url)) return;
   try {
-    const a = new Audio(incredible);
+    const a = new Audio(url);
     a.preload = "auto";
     const entry = { audio: a, ready: false, failed: false };
     a.addEventListener(
@@ -50,7 +50,7 @@ export function preloadCelebrationSound() {
       },
       { once: true }
     );
-    fileSounds.set(incredible, entry);
+    fileSounds.set(url, entry);
   } catch {
     /* ignore */
   }
