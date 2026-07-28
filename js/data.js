@@ -1282,6 +1282,8 @@ function splitSections(rows) {
 
 /**
  * Parse Info sheet.
+ * Rows under "Uwagi ogólne" are for spreadsheet authors only (gray cells
+ * in Sheets) — CSV has no color, so we drop that block by heading.
  * @param {string[][]} rows
  */
 export function parseInfoSheet(rows) {
@@ -1290,6 +1292,8 @@ export function parseInfoSheet(rows) {
   let title = "Olimpiada Bieździadów 2026";
   /** @type {Record<string, string>} */
   const meta = {};
+  /** Hide organizer notes from "Uwagi ogólne" to end of sheet body */
+  let skipOrganizerNotes = false;
 
   const META_KEYS = new Set([
     "data",
@@ -1305,6 +1309,22 @@ export function parseInfoSheet(rows) {
     const cells = rawCells.filter(Boolean);
     if (!cells.length) continue;
 
+    const line = cells.join(" ");
+    // Spreadsheet-only block (gray background in the sheet) — not for the app
+    if (/^uwagi\s*og[oó]lne\b/i.test(line.trim())) {
+      skipOrganizerNotes = true;
+      continue;
+    }
+    if (skipOrganizerNotes) {
+      // Still allow a few explicit meta keys if they appear later
+      const key = cells[0].toLowerCase();
+      if (META_KEYS.has(key) && cells[0].length < 30) {
+        const value = rawCells.slice(1).map(cellStr).filter(Boolean).join(" ");
+        if (value) meta[key] = value;
+      }
+      continue;
+    }
+
     const key = cells[0].toLowerCase();
     // Key-value meta (value may be empty — skip until filled)
     if (META_KEYS.has(key) && cells[0].length < 30 && !cells[0].startsWith("•")) {
@@ -1313,7 +1333,11 @@ export function parseInfoSheet(rows) {
       continue;
     }
 
-    const line = cells.join(" ");
+    // Template version line is for sheet authors, not the public UI
+    if (/^wersja\s*szablonu\b/i.test(line.trim())) {
+      continue;
+    }
+
     if (
       /olimpiada/i.test(line) &&
       paragraphs.length === 0 &&

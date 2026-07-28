@@ -4,6 +4,7 @@
 
 import { TABS, APP_TITLE, MEDAL_SOUNDS } from "./config.js";
 import { buildPlayerProfile, sortPlayersByMedals } from "./data.js";
+import { matchIdentityKey } from "./notifications.js";
 
 function esc(s) {
   return String(s ?? "")
@@ -152,6 +153,8 @@ function renderMatchRosters(match, teams) {
  *   teams?: { name: string, players?: string[] }[]|null,
  *   expandable?: boolean,
  *   expandedMatchKey?: string|null,
+ *   highlightMatchKey?: string|null,
+ *   tabId?: string,
  * }} [opts]
  */
 function renderMatches(matches, opts = {}) {
@@ -159,9 +162,14 @@ function renderMatches(matches, opts = {}) {
   const expandable = Boolean(opts.expandable);
   const teams = opts.teams || null;
   const expandedKey = opts.expandedMatchKey ?? null;
+  const highlightKey = opts.highlightMatchKey ?? null;
+  const tabId = opts.tabId || "";
 
-  // Preserve original index for stable expand keys across phase groups
-  const indexed = matches.map((m, i) => ({ m, key: String(i) }));
+  // Stable key = discipline|phase|side1|side2 (same as notifications)
+  const indexed = matches.map((m, i) => ({
+    m,
+    key: tabId ? matchIdentityKey(tabId, m) : String(i),
+  }));
   /** @type {Map<string, typeof indexed>} */
   const groups = new Map();
   for (const item of indexed) {
@@ -181,11 +189,13 @@ function renderMatches(matches, opts = {}) {
     for (const { m, key } of list) {
       const hasScore = Boolean(m.score);
       const expanded = expandable && expandedKey === key;
+      const highlighted = highlightKey && highlightKey === key;
       const classes = [
         "match-card",
         hasScore ? "has-score" : "pending",
         expandable ? "is-expandable" : "",
         expanded ? "is-expanded" : "",
+        highlighted ? "is-highlight" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -197,9 +207,10 @@ function renderMatches(matches, opts = {}) {
         : "";
       const roster =
         expandable && expanded ? renderMatchRosters(m, teams) : "";
+      const highlightAttr = highlighted ? ` data-match-highlight` : "";
 
       html += `
-        <article class="${classes}"${toggleAttrs}>
+        <article class="${classes}"${toggleAttrs}${highlightAttr}>
           <div class="match-main">
             <div class="match-sides">
               <span class="side side-a">${esc(m.side1)}</span>
@@ -666,11 +677,14 @@ export function renderNotificationsSection(notifications) {
         : "";
       const bodyContent = n.bodyHtml || esc(n.body);
       const tabAttr = n.tabId ? ` data-notif-tab="${esc(n.tabId)}"` : "";
+      const matchAttr = n.matchKey
+        ? ` data-notif-match="${esc(n.matchKey)}"`
+        : "";
       const clickable = n.tabId ? " is-clickable" : "";
       return `
         <article class="notif-card notif-card--${esc(n.type || "info")}${clickable}"
           data-notif-id="${esc(n.id)}"
-          data-swipe-notif${tabAttr}
+          data-swipe-notif${tabAttr}${matchAttr}
           ${n.tabId ? 'role="link" tabindex="0"' : ""}>
           <div class="notif-card-inner">
             <span class="notif-icon" aria-hidden="true">${notificationIcon(n.type)}</span>
@@ -790,7 +804,8 @@ export function renderInfo(data, opts = {}) {
       if (p.startsWith("•") || /^\d+\./.test(p)) {
         return `<li>${esc(p.replace(/^•\s*/, ""))}</li>`;
       }
-      if (/^(Dyscypliny|Uwagi|Informacje)/i.test(p)) {
+      // "Uwagi ogólne" is filtered at parse time; other section titles still style
+      if (/^(Dyscypliny|Informacje)/i.test(p) || (/^Uwagi\b/i.test(p) && !/^Uwagi\s*og[oó]lne/i.test(p))) {
         return `</ul><h3 class="info-subtitle">${esc(p)}</h3><ul class="info-list">`;
       }
       return `<p class="info-para">${esc(p)}</p>`;
@@ -1150,7 +1165,7 @@ function cellStrSafe(v) {
  * Render a discipline tab by id.
  * @param {string} tabId
  * @param {any} data
- * @param {{ expandedAttempts?: Set<string>, expandedGracz?: string|null, expandedMatchKey?: string|null }} [uiState]
+ * @param {{ expandedAttempts?: Set<string>, expandedGracz?: string|null, expandedMatchKey?: string|null, highlightMatchKey?: string|null }} [uiState]
  */
 export function renderDiscipline(tabId, data, uiState = {}) {
   if (tabId === "gracze") {
@@ -1211,11 +1226,18 @@ export function renderDiscipline(tabId, data, uiState = {}) {
         expandable: true,
         teams: disc.teams || [],
         expandedMatchKey: uiState.expandedMatchKey ?? null,
+        highlightMatchKey: uiState.highlightMatchKey ?? null,
+        tabId,
       })
     );
   } else {
     // Badminton: tylko mecze (bez osobnej listy graczy)
-    parts.push(renderMatches(disc.matches));
+    parts.push(
+      renderMatches(disc.matches, {
+        highlightMatchKey: uiState.highlightMatchKey ?? null,
+        tabId,
+      })
+    );
   }
 
   if (tabId === "siatkowka") {

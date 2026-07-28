@@ -42,6 +42,7 @@ import { detectNewspaperEvents } from "./newspaper.js";
  * @property {string} [discipline]
  * @property {string} [recipient]
  * @property {string} [tabId] discipline tab to open on click
+ * @property {string} [matchKey] stable match identity (matchIdentityKey) for focus
  * @property {NewspaperPayload} [newspaper]
  */
 
@@ -54,6 +55,7 @@ import { detectNewspaperEvents } from "./newspaper.js";
  * @property {string} [discipline]
  * @property {string} [recipient]
  * @property {string} [tabId]
+ * @property {string} [matchKey]
  * @property {boolean} [celebrate]
  * @property {NewspaperPayload} [newspaper]
  */
@@ -158,6 +160,7 @@ export function addNotificationsFromEvents(events) {
     discipline: e.discipline,
     recipient: e.recipient,
     tabId: e.tabId,
+    matchKey: e.matchKey || undefined,
     newspaper: e.newspaper || undefined,
   }));
   const merged = [...incoming, ...loadNotifications()].slice(0, MAX_NOTIFICATIONS);
@@ -485,6 +488,7 @@ export function detectEvents(prev, next, data) {
         bodyHtml,
         discipline: meta.label,
         tabId: meta.id,
+        matchKey: key, // stable identity for highlight on click
         celebrate: false,
       });
     }

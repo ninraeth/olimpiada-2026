@@ -40,6 +40,8 @@ const state = {
   expandedGracz: null,
   /** @type {string|null} expanded team-sport match key (roster panel) */
   expandedMatchKey: null,
+  /** @type {string|null} match identity to highlight (from notification) */
+  highlightMatchKey: null,
   /** @type {import('./notifications.js').AppNotification[]} */
   notifications: [],
   optionsOpen: false,
@@ -71,19 +73,40 @@ function updateNav() {
   });
 }
 
-function switchTab(tabId) {
+/**
+ * @param {string} tabId
+ * @param {{
+ *   keepMatchFocus?: boolean,
+ *   matchKey?: string|null,
+ *   expandMatch?: boolean,
+ * }} [opts]
+ */
+function switchTab(tabId, opts = {}) {
   if (!TABS.some((t) => t.id === tabId)) return;
   state.activeTab = tabId;
-  // Collapse expandables when leaving their context
-  state.expandedMatchKey = null;
+  if (opts.keepMatchFocus && opts.matchKey) {
+    state.highlightMatchKey = opts.matchKey;
+    // Team sports: also open roster panel for that match
+    state.expandedMatchKey = opts.expandMatch ? opts.matchKey : null;
+  } else {
+    state.expandedMatchKey = null;
+    state.highlightMatchKey = null;
+  }
   // Persist tab in hash for deep links / refresh
   if (location.hash.replace("#", "") !== tabId) {
     history.replaceState(null, "", `#${tabId}`);
   }
   updateNav();
   render();
-  // Scroll content to top on tab change
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (opts.keepMatchFocus && opts.matchKey) {
+    // Scroll to highlighted match (not page top)
+    requestAnimationFrame(() => {
+      const el = els.content?.querySelector("[data-match-highlight]");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 }
 
 function render() {
@@ -111,6 +134,7 @@ function render() {
       expandedAttempts: state.expandedAttempts,
       expandedGracz: state.expandedGracz,
       expandedMatchKey: state.expandedMatchKey,
+      highlightMatchKey: state.highlightMatchKey,
     });
   }
 
@@ -248,6 +272,7 @@ function bindNotificationSwipe() {
     const id = card.getAttribute("data-notif-id");
     if (!id) return;
     const tabId = card.getAttribute("data-notif-tab");
+    const matchKey = card.getAttribute("data-notif-match");
     const isNewspaper = card.hasAttribute("data-newspaper-open");
 
     let startX = 0;
@@ -273,7 +298,15 @@ function bindNotificationSwipe() {
         }
         return;
       }
-      if (tabId) switchTab(tabId);
+      if (tabId) {
+        const isTeamTab = tabId === "pilka" || tabId === "siatkowka";
+        switchTab(tabId, {
+          keepMatchFocus: Boolean(matchKey),
+          matchKey: matchKey || null,
+          expandMatch: isTeamTab && Boolean(matchKey),
+        });
+        return;
+      }
     };
 
     const resetVisual = () => {
