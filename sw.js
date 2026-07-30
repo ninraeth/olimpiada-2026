@@ -1,5 +1,5 @@
 /* Service Worker — Olimpiada Bieździadów 2026 */
-const CACHE_NAME = "olimpiada-2026-v44";
+const CACHE_NAME = "olimpiada-2026-v47";
 const SHELL = [
   "./",
   "./index.html",

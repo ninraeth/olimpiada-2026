@@ -27,6 +27,9 @@ const {
   pickTemplate,
   textPoolKey,
   normalizeBackgroundFile,
+  listNewspaperSlotsFromData,
+  recomputeNewspaperUsageFromData,
+  pruneNewspaperFiredToData,
 } = await import(pathToFileURL(path.join(root, "js/newspaper.js")).href);
 
 function assert(c, m) {
@@ -149,5 +152,50 @@ assert(pickTemplate(key, pool) === "B", "seq 2");
 assert(pickTemplate(key, pool) === "C", "seq 3");
 assert(pickTemplate(key, pool) === "A", "seq wrap");
 assert(textPoolKey("pilkaNozna", "final", true) === "pilkaNozna.finalDominant", "pool key");
+
+// ── Recompute counters from real sheet (heal phantom advances) ──
+_store.clear();
+// Poison bg counter as if 5 fake semi_close newspapers fired
+_store.set(
+  "olimpiada2026_newspaper_bg_usage_v1",
+  JSON.stringify({ "bg:siatkowka_semi_close": 5 })
+);
+_store.set(
+  "olimpiada2026_newspaper_fired_v1",
+  JSON.stringify([
+    "match|siatkowka|polfinal|phantom a|phantom b|3:0",
+    "match|siatkowka|polfinal|real 1|real 2|2:1",
+  ])
+);
+const healData = {
+  disciplines: {
+    siatkowka: {
+      title: "Siatkówka",
+      teams: [],
+      matches: [
+        { phase: "Półfinał", side1: "Real 1", side2: "Real 2", score: "2:1" },
+        { phase: "Półfinał", side1: "Real 3", side2: "Real 4", score: "2:0" },
+      ],
+    },
+  },
+};
+const slots = listNewspaperSlotsFromData(healData);
+assert(slots.length === 2, "two real newspaper slots");
+const pruned = pruneNewspaperFiredToData(healData);
+assert(pruned === 1, "one phantom fired id removed");
+// onlyFired: only Real 1 still in fired → next index 1 for close (2:1) pool
+const closeKey = "bg:siatkowka_semi_close";
+const domKey = "bg:siatkowka_semi_dominant";
+recomputeNewspaperUsageFromData(healData, { onlyFired: true });
+const bgAfterFired = JSON.parse(_store.get("olimpiada2026_newspaper_bg_usage_v1") || "{}");
+assert(bgAfterFired[closeKey] === 1, "onlyFired close next=1");
+assert(bgAfterFired[domKey] == null, "onlyFired dominant unused");
+// absolute: both reals (close + dominant) → close count 1, dominant count 1
+recomputeNewspaperUsageFromData(healData);
+const bgAbs = JSON.parse(_store.get("olimpiada2026_newspaper_bg_usage_v1") || "{}");
+assert(bgAbs[closeKey] === 1, "abs close next=1");
+assert(bgAbs[domKey] === 1, "abs dominant next=1");
+// phantom pool key gone
+assert(bgAbs["bg:siatkowka_semi_close"] === 1, "no residual 5");
 
 console.log("test_newspaper: OK");

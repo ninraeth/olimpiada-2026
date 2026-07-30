@@ -307,6 +307,199 @@ export function pickSequential(storageKey, poolKey, items) {
 }
 
 /**
+ * Candidates for a text pool key (`pilkaNozna.close`, …).
+ * @param {string} poolKey
+ * @returns {string[]}
+ */
+export function textPoolItems(poolKey) {
+  const i = String(poolKey).indexOf(".");
+  if (i < 0) return [];
+  const discKey = poolKey.slice(0, i);
+  const field = poolKey.slice(i + 1);
+  const arr = newspaperTexts[discKey]?.[field];
+  if (!Array.isArray(arr)) return [];
+  return arr.map((t) => cellStr(t)).filter(Boolean);
+}
+
+/**
+ * Background filenames for a map key (`siatkowka_semi_close`, …).
+ * @param {string} bgKey
+ * @returns {string[]}
+ */
+export function bgPoolItems(bgKey) {
+  const entry = newspaperBackgrounds[bgKey];
+  if (entry == null) return [];
+  if (Array.isArray(entry)) {
+    return entry.map((x) => normalizeBackgroundFile(x)).filter(Boolean);
+  }
+  const one = normalizeBackgroundFile(entry);
+  return one ? [one] : [];
+}
+
+/**
+ * List every newspaper-worthy result currently in the live sheet
+ * (knockout matches with scores + individual golds). Does not touch storage.
+ *
+ * @param {any} data
+ * @returns {{ paperId: string, discKey: string, stage: string, dominant: boolean, textPoolKey: string, bgKey: string }[]}
+ */
+export function listNewspaperSlotsFromData(data) {
+  /** @type {{ paperId: string, discKey: string, stage: string, dominant: boolean, textPoolKey: string, bgKey: string }[]} */
+  const slots = [];
+  const disciplines = data?.disciplines || {};
+  const matchTabs = ["pilka", "siatkowka", "badminton"];
+
+  for (const tabId of matchTabs) {
+    const discKey = DISC_KEY[tabId];
+    const disc = disciplines[tabId];
+    if (!discKey || !disc?.matches?.length) continue;
+
+    for (const m of disc.matches) {
+      const score = cellStr(m.score);
+      if (!score) continue;
+      const stage = classifyMatchStage(m.phase);
+      if (!stage) continue;
+      const dominantFlag = isDominantVictory(tabId, score);
+      if (dominantFlag == null) continue;
+      const dominant = dominantFlag;
+      const paperId = [
+        "match",
+        tabId,
+        normKey(m.phase),
+        normKey(m.side1),
+        normKey(m.side2),
+        score,
+      ].join("|");
+      const poolKey = textPoolKey(discKey, stage, dominant);
+      const bgKey = backgroundKeyFor(discKey, stage, dominant);
+      // Only count if this event could actually render (text + bg configured)
+      if (!textPoolItems(poolKey).length) continue;
+      if (!bgPoolItems(bgKey).length) continue;
+      slots.push({
+        paperId,
+        discKey,
+        stage,
+        dominant,
+        textPoolKey: poolKey,
+        bgKey,
+      });
+    }
+  }
+
+  for (const tabId of ["koszykowka", "pilka_ind"]) {
+    const discKey = DISC_KEY[tabId];
+    const disc = disciplines[tabId];
+    if (!discKey || !disc) continue;
+    const gold = medalName(disc.medals || [], "złoty");
+    if (!gold) continue;
+    const dominantFlag = isDominantIndividual(disc.players || []);
+    if (dominantFlag == null) continue;
+    const dominant = dominantFlag;
+    const paperId = `gold|${tabId}|${normKey(gold)}`;
+    const poolKey = textPoolKey(discKey, "individual", dominant);
+    const bgKey = backgroundKeyFor(discKey, "individual", dominant);
+    if (!textPoolItems(poolKey).length) continue;
+    if (!bgPoolItems(bgKey).length) continue;
+    slots.push({
+      paperId,
+      discKey,
+      stage: "individual",
+      dominant,
+      textPoolKey: poolKey,
+      bgKey,
+    });
+  }
+
+  return slots;
+}
+
+/**
+ * Rebuild text/bg sequential counters from *actual* sheet results.
+ * Fixes drift when fake/stale newspaper events advanced the pools.
+ *
+ * nextIndex[pool] = (number of counted events in that pool) % poolLength
+ *
+ * @param {any} data
+ * @param {{ onlyFired?: boolean }} [opts]
+ *   onlyFired: count only results already in NEWSPAPER_FIRED (for pre-pick align).
+ *   default: count every legitimate slot in the live sheet (post-pick absolute).
+ * @returns {{ text: Record<string, number>, bg: Record<string, number>, slots: number }}
+ */
+export function recomputeNewspaperUsageFromData(data, opts = {}) {
+  const allSlots = listNewspaperSlotsFromData(data);
+  let slots = allSlots;
+  if (opts.onlyFired) {
+    const fired = loadNewspaperFired();
+    slots = allSlots.filter((s) => fired.has(s.paperId));
+  }
+
+  /** @type {Record<string, number>} */
+  const textCounts = {};
+  /** @type {Record<string, number>} */
+  const bgCounts = {};
+
+  for (const s of slots) {
+    textCounts[s.textPoolKey] = (textCounts[s.textPoolKey] || 0) + 1;
+    const bgStoreKey = `bg:${s.bgKey}`;
+    bgCounts[bgStoreKey] = (bgCounts[bgStoreKey] || 0) + 1;
+  }
+
+  /** @type {Record<string, number>} */
+  const textState = {};
+  for (const [poolKey, count] of Object.entries(textCounts)) {
+    const len = textPoolItems(poolKey).length;
+    if (len > 0) textState[poolKey] = count % len;
+  }
+
+  /** @type {Record<string, number>} */
+  const bgState = {};
+  for (const [storeKey, count] of Object.entries(bgCounts)) {
+    const bgKey = storeKey.startsWith("bg:") ? storeKey.slice(3) : storeKey;
+    const len = bgPoolItems(bgKey).length;
+    if (len > 0) bgState[storeKey] = count % len;
+  }
+
+  // Full replace — drops phantom pool keys advanced by false events
+  saveUsageMap(NEWSPAPER_TEXT_USAGE_KEY, textState);
+  saveUsageMap(NEWSPAPER_BG_USAGE_KEY, bgState);
+
+  return { text: textState, bg: bgState, slots: slots.length };
+}
+
+/**
+ * Drop "already told" newspaper ids that no longer exist in the live sheet
+ * (e.g. phantom teams/scores from stale cache). Does not mark unfired reals.
+ *
+ * @param {any} data
+ * @returns {number} how many phantom ids removed
+ */
+export function pruneNewspaperFiredToData(data) {
+  const valid = new Set(listNewspaperSlotsFromData(data).map((s) => s.paperId));
+  const fired = loadNewspaperFired();
+  let removed = 0;
+  for (const id of [...fired]) {
+    if (!valid.has(id)) {
+      fired.delete(id);
+      removed++;
+    }
+  }
+  if (removed) saveNewspaperFired(fired);
+  return removed;
+}
+
+/**
+ * Heal sequential counters + fired set from live tournament data.
+ * Safe to call on every successful network load.
+ * @param {any} data
+ */
+export function syncNewspaperStateFromData(data) {
+  if (!data?.disciplines) return { slots: 0, pruned: 0 };
+  const { slots } = recomputeNewspaperUsageFromData(data);
+  const pruned = pruneNewspaperFiredToData(data);
+  return { slots, pruned };
+}
+
+/**
  * Take next unused template in order for this pool; wrap when exhausted.
  *
  * @param {string} poolKey e.g. "pilkaNozna.close"
@@ -500,7 +693,17 @@ function saveNewspaperFired(set) {
  */
 export function detectNewspaperEvents(prev, next, data) {
   // Wait until regular system has baselined once
-  if (!prev || !next) return [];
+  if (!prev || !next) {
+    // Drop phantom fired ids; counters = already-told reals only (usually 0).
+    // Do NOT count all sheet results yet — they will fire on the next refresh.
+    pruneNewspaperFiredToData(data);
+    recomputeNewspaperUsageFromData(data, { onlyFired: true });
+    return [];
+  }
+
+  // Align pools to legitimate stories already told (undo phantom advances)
+  pruneNewspaperFiredToData(data);
+  recomputeNewspaperUsageFromData(data, { onlyFired: true });
 
   /** @type {any[]} */
   const events = [];
@@ -652,5 +855,10 @@ export function detectNewspaperEvents(prev, next, data) {
   }
 
   if (dirty) saveNewspaperFired(fired);
+
+  // Absolute resync: counters = f(real sheet), not f(whatever fired before).
+  // Runs after pickSequential so a just-emitted story is included in the count.
+  syncNewspaperStateFromData(data);
+
   return events;
 }

@@ -7,11 +7,40 @@ import {
   TABS,
   exportCsvUrl,
   gvizCsvUrl,
-  openSheetUrl,
+  withCacheBust,
   CACHE_KEY,
+  MAX_TRUSTED_CACHE_AGE_MS,
   BASKETBALL_SHOT_KEYS,
   FOOTBALL_IND_SHOT_KEYS,
 } from "./config.js";
+
+/**
+ * Bundled sample.json is only for local dev / explicit ?sample=1.
+ * Never use it in production — it overwrites real tournament data in localStorage.
+ */
+function allowSampleFallback() {
+  try {
+    const h = location.hostname;
+    if (h === "localhost" || h === "127.0.0.1") return true;
+    return new URLSearchParams(location.search).has("sample");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {string} url
+ * @param {"text"|"json"} as
+ */
+async function fetchNetwork(url, as = "text") {
+  const res = await fetch(withCacheBust(url), {
+    cache: "no-store",
+    mode: "cors",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (as === "json") return res.json();
+  return res.text();
+}
 
 // ─── CSV helpers ───────────────────────────────────────────────
 
@@ -1809,15 +1838,9 @@ async function fetchSheetRows(sheetName) {
   const exportUrl = exportCsvUrl(sheetName);
   if (exportUrl) {
     try {
-      const res = await fetch(exportUrl, {
-        cache: "no-store",
-        mode: "cors",
-      });
-      if (res.ok) {
-        const text = await res.text();
-        if (text && !text.trimStart().startsWith("<")) {
-          return parseCsv(text);
-        }
+      const text = await fetchNetwork(exportUrl, "text");
+      if (text && !text.trimStart().startsWith("<")) {
+        return parseCsv(text);
       }
     } catch (e) {
       console.warn("export csv failed for", sheetName, e);
@@ -1826,62 +1849,62 @@ async function fetchSheetRows(sheetName) {
 
   // 2) gviz CSV (may drop text in numeric-looking columns)
   try {
-    const res = await fetch(gvizCsvUrl(sheetName), {
-      cache: "no-store",
-      mode: "cors",
-    });
-    if (res.ok) {
-      const text = await res.text();
-      if (text && !text.trimStart().startsWith("<")) {
-        console.warn(
-          "Using gviz for",
-          sheetName,
-          "— text cells like 's' may be missing"
-        );
-        return parseCsv(text);
-      }
+    const text = await fetchNetwork(gvizCsvUrl(sheetName), "text");
+    if (text && !text.trimStart().startsWith("<")) {
+      console.warn(
+        "Using gviz for",
+        sheetName,
+        "— text cells like 's' may be missing"
+      );
+      return parseCsv(text);
     }
   } catch (e) {
     console.warn("gviz fetch failed for", sheetName, e);
   }
 
-  // 3) OpenSheet JSON
-  try {
-    const res = await fetch(openSheetUrl(sheetName), {
-      cache: "no-store",
-      mode: "cors",
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length) {
-        const keys = Object.keys(data[0]);
-        const rows = [keys];
-        for (const obj of data) {
-          rows.push(keys.map((k) => (obj[k] != null ? String(obj[k]) : "")));
+  // 3) Bundled sample — DEV ONLY (never in production PWA)
+  // OpenSheet / third-party proxies intentionally omitted: they can serve
+  // multi-day-old sheet snapshots and look like "live" tournament data.
+  if (allowSampleFallback()) {
+    try {
+      const res = await fetch("./data/sample.json", { cache: "no-store" });
+      if (res.ok) {
+        const sample = await res.json();
+        if (sample?.sheets?.[sheetName]) {
+          console.info("Using bundled sample for", sheetName);
+          return sample.sheets[sheetName];
         }
-        return rows;
       }
-      if (Array.isArray(data)) return [];
+    } catch (e) {
+      console.warn("sample.json fetch failed for", sheetName, e);
     }
-  } catch (e) {
-    console.warn("opensheet fetch failed for", sheetName, e);
-  }
-
-  // 4) Bundled sample (offline / dev)
-  try {
-    const res = await fetch("./data/sample.json", { cache: "no-store" });
-    if (res.ok) {
-      const sample = await res.json();
-      if (sample?.sheets?.[sheetName]) {
-        console.info("Using bundled sample for", sheetName);
-        return sample.sheets[sheetName];
-      }
-    }
-  } catch (e) {
-    console.warn("sample.json fetch failed for", sheetName, e);
   }
 
   throw new Error(`Nie udało się pobrać arkusza: ${sheetName}`);
+}
+
+/**
+ * @param {any} data
+ * @param {number} [maxAgeMs]
+ * @returns {boolean}
+ */
+export function isSnapshotFresh(data, maxAgeMs = MAX_TRUSTED_CACHE_AGE_MS) {
+  if (!data?.fetchedAt) return false;
+  const t = Date.parse(data.fetchedAt);
+  if (!Number.isFinite(t)) return false;
+  return Date.now() - t <= maxAgeMs;
+}
+
+/**
+ * Age of snapshot in ms, or null if unknown.
+ * @param {any} data
+ * @returns {number | null}
+ */
+export function snapshotAgeMs(data) {
+  if (!data?.fetchedAt) return null;
+  const t = Date.parse(data.fetchedAt);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Date.now() - t);
 }
 
 /**
@@ -2289,20 +2312,59 @@ export function sortPlayersByMedals(directory, disciplines) {
 }
 
 /**
- * Load all tournament data.
+ * Read last successful *network* snapshot from localStorage (no fromCache flag).
+ * @returns {any | null}
+ */
+function readStoredSnapshot() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist only trustworthy network payloads.
+ * @param {any} payload
+ */
+function saveSnapshot(payload) {
+  try {
+    const toStore = { ...payload };
+    delete toStore.fromCache;
+    delete toStore.errors;
+    localStorage.setItem(CACHE_KEY, JSON.stringify(toStore));
+  } catch {
+    /* quota */
+  }
+}
+
+/**
+ * Load all tournament data from Google Sheets.
+ * - Never silently serves bundled sample.json in production.
+ * - Never overwrites a good cache with empty/partial/sample data.
+ * - On total network failure returns previous cache (fromCache: true) or throws.
  * @returns {Promise<{ info: any, disciplines: Record<string, any>, playersDirectory: {id:string,name:string}[], fetchedAt: string, fromCache?: boolean, errors?: string[] }>}
  */
 export async function loadTournamentData() {
   const errors = [];
   /** @type {Record<string, any>} */
   const disciplines = {};
-  /** @type {{ id: string, name: string }[]} */
+  /** @type {{ id: string, name: string, gender?: any }[]} */
   let playersDirectory = [];
   let info = {
     title: "Olimpiada Bieździadów 2026",
     paragraphs: [],
     meta: {},
   };
+
+  /** @type {Set<string>} */
+  const okTabs = new Set();
+  /** @type {Set<string>} */
+  const failedTabs = new Set();
+
+  const prev = readStoredSnapshot();
 
   const tasks = TABS.map(async (tab) => {
     try {
@@ -2314,9 +2376,39 @@ export async function loadTournamentData() {
       } else {
         disciplines[tab.id] = parseDisciplineSheet(tab.sheet, rows);
       }
+      okTabs.add(tab.id);
     } catch (e) {
       console.error(e);
       errors.push(`${tab.label}: ${e.message || e}`);
+      failedTabs.add(tab.id);
+    }
+  });
+
+  await Promise.all(tasks);
+
+  // Total failure → only reuse cache if still fresh (minutes, not hours/days).
+  // Stale cache is worse than an error: it invents old scores/teams.
+  if (okTabs.size === 0) {
+    if (prev && isSnapshotFresh(prev)) {
+      return {
+        ...prev,
+        fromCache: true,
+        errors: [
+          "Brak połączenia z arkuszem — pokazano dane z ostatnich minut (cache).",
+          ...errors,
+        ],
+      };
+    }
+    throw new Error(
+      "Nie udało się pobrać aktualnych danych z Google Sheets. Sprawdź internet i odśwież. Stary cache nie jest pokazywany, żeby nie wyświetlać nieaktualnych wyników."
+    );
+  }
+
+  // Partial failure: never mix live tabs with old cached disciplines
+  // (that produced “current football + ancient volleyball”).
+  if (failedTabs.size) {
+    for (const tab of TABS) {
+      if (!failedTabs.has(tab.id)) continue;
       if (tab.id === "gracze") {
         playersDirectory = [];
       } else if (tab.id !== "info") {
@@ -2331,9 +2423,7 @@ export async function loadTournamentData() {
         };
       }
     }
-  });
-
-  await Promise.all(tasks);
+  }
 
   // Fallback directory from union of known players if sheet empty
   if (!playersDirectory.length) {
@@ -2364,26 +2454,39 @@ export async function loadTournamentData() {
     errors: errors.length ? errors : undefined,
   };
 
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
-  } catch {
-    /* quota */
+  // Only persist when we actually got live sheet data for every tab.
+  // Partial saves used to freeze wrong mixes of empty + stale sheets on phones.
+  if (failedTabs.size === 0) {
+    saveSnapshot(payload);
   }
 
   return payload;
 }
 
 /**
- * Read last successful snapshot from localStorage.
+ * Read last successful snapshot from localStorage (for offline UI).
+ * By default only returns data still within MAX_TRUSTED_CACHE_AGE_MS.
+ *
+ * @param {{ maxAgeMs?: number | null }} [opts]
+ *   maxAgeMs: max age to accept; `null` = any age (almost never use in UI).
  */
-export function loadCachedData() {
+export function loadCachedData(opts = {}) {
+  // Drop pre-v3 snapshots that may contain sample.json / partial junk
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    data.fromCache = true;
-    return data;
+    localStorage.removeItem("olimpiada2026_data_v2");
+    localStorage.removeItem("olimpiada2026_data_v1");
   } catch {
+    /* ignore */
+  }
+  const data = readStoredSnapshot();
+  if (!data) return null;
+
+  const maxAge =
+    opts.maxAgeMs === undefined ? MAX_TRUSTED_CACHE_AGE_MS : opts.maxAgeMs;
+  if (maxAge != null && !isSnapshotFresh(data, maxAge)) {
     return null;
   }
+
+  data.fromCache = true;
+  return data;
 }

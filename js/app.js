@@ -563,25 +563,40 @@ async function refresh(forceNetwork = false) {
     const data = await loadTournamentData();
     state.data = data;
     state.loading = false;
-    handleDataEvents(data);
+    // Don't invent match/medal events from pure offline cache (avoids spam + wrong notifs)
+    if (!data.fromCache) {
+      handleDataEvents(data);
+    }
     const t = new Date(data.fetchedAt).toLocaleTimeString("pl-PL", {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const warn = data.errors?.length ? " !" : "";
-    setStatus(`akt. ${t}${warn}`, data.errors?.length ? "warn" : "ok");
+    if (data.fromCache) {
+      setStatus(`cache ${t}`, "warn");
+    } else {
+      const warn = data.errors?.length ? " !" : "";
+      setStatus(`akt. ${t}${warn}`, data.errors?.length ? "warn" : "ok");
+    }
     render();
   } catch (e) {
     console.error(e);
     state.loading = false;
-    // Fall back to cache
+    // Only very fresh cache — never revive hours-old scores/teams
     const cached = loadCachedData();
     if (cached) {
       state.data = cached;
       state.error = null;
-      setStatus("offline", "warn");
+      const t = cached.fetchedAt
+        ? new Date(cached.fetchedAt).toLocaleTimeString("pl-PL", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "";
+      setStatus(t ? `cache ${t}` : "offline", "warn");
       render();
     } else {
+      // Drop previously shown data so we don't keep painting a stale view
+      state.data = null;
       state.error = e.message || String(e);
       setStatus("błąd", "error");
       render();
@@ -626,10 +641,13 @@ function init() {
   state.notifications = loadNotifications();
   preloadCelebrationSound();
 
-  // Show cache immediately if available (no event detection — wait for network)
+  // Instant paint only from *fresh* cache (≤ MAX_TRUSTED_CACHE_AGE_MS).
+  // Never flash days-old localStorage while waiting for the network.
   const cached = loadCachedData();
   if (cached) {
     state.data = cached;
+    setStatus("…", "loading");
+  } else {
     setStatus("…", "loading");
   }
 

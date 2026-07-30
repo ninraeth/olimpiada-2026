@@ -37,8 +37,18 @@ export const FOOTBALL_IND_SHOT_KEYS = ["Karne", "1na1", "Luta"];
 /** Auto-refresh interval in milliseconds (5 minutes) */
 export const REFRESH_INTERVAL_MS = 5 * 60_000;
 
-/** localStorage key for last successful data snapshot */
-export const CACHE_KEY = "olimpiada2026_data_v2";
+/**
+ * How long a local snapshot is still considered "safe to show".
+ * Older cache is discarded — better empty/error than wrong match results.
+ * (Tournament data changes; multi-hour offline views caused false scores.)
+ */
+export const MAX_TRUSTED_CACHE_AGE_MS = 10 * 60_000;
+
+/**
+ * localStorage key for last successful *network* snapshot.
+ * Bump when cache shape or trust rules change (v3: never store sample/partial junk).
+ */
+export const CACHE_KEY = "olimpiada2026_data_v3";
 
 /** localStorage: compact snapshot for change-detection (notifications) */
 export const EVENTS_SNAPSHOT_KEY = "olimpiada2026_events_snap_v1";
@@ -104,6 +114,15 @@ export const DISCIPLINE_LABELS = {
  * CORS: Access-Control-Allow-Origin: *
  * @param {string} sheetName
  */
+/**
+ * Cache-buster so mobile browsers / CDNs don't serve a frozen sheet export.
+ * @param {string} url
+ */
+export function withCacheBust(url) {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}_ts=${Date.now()}`;
+}
+
 export function exportCsvUrl(sheetName) {
   const gid = SHEET_GIDS[sheetName];
   if (!gid) return null;
@@ -124,10 +143,4 @@ export function gvizCsvUrl(sheetName) {
   return `${base}?${params.toString()}`;
 }
 
-/**
- * OpenSheet fallback (CORS-friendly JSON).
- * @param {string} sheetName
- */
-export function openSheetUrl(sheetName) {
-  return `https://opensheet.elk.sh/${SPREADSHEET_ID}/${encodeURIComponent(sheetName)}`;
-}
+/* OpenSheet removed: third-party proxy can return multi-day-old sheet snapshots. */

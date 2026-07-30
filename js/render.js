@@ -813,7 +813,11 @@ export function renderInfo(data, opts = {}) {
     .join("");
 
   const cacheNote = data?.fromCache
-    ? `<p class="banner banner-warn">Wyświetlane są dane z pamięci podręcznej (offline lub błąd sieci).</p>`
+    ? `<p class="banner banner-warn">Tryb awaryjny: brak połączenia z arkuszem — widać dane z <strong>ostatnich minut</strong> (${esc(
+        data.fetchedAt
+          ? new Date(data.fetchedAt).toLocaleString("pl-PL")
+          : "?"
+      )}). Starszy cache apka celowo ukrywa, żeby nie pokazywać nieaktualnych wyników. Odśwież przy dobrym internecie.</p>`
     : "";
 
   const errNote =
